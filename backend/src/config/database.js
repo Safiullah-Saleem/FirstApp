@@ -18,13 +18,13 @@ const sequelize = new Sequelize(
 const testConnection = async () => {
   try {
     await sequelize.authenticate();
-    console.log("✅ PostgreSQL connection established successfully.");
+    console.log("PostgreSQL connection established successfully.");
 
-    // Sync database
-    await sequelize.sync();
-    console.log("✅ Database synced successfully.");
+    // ⚠️ UPDATE THIS LINE - Add { alter: true }
+    await sequelize.sync({ alter: true });
+    console.log("Database tables updated with new columns.");
   } catch (error) {
-    console.error("❌ Database connection error:", error.message);
+    console.error("Database connection error:", error.message);
   }
 };
 

@@ -66,6 +66,41 @@ const User = sequelize.define(
       type: DataTypes.BOOLEAN,
       defaultValue: false,
     },
+
+    // NEW FIELDS FOR COMPANY SETTINGS
+    terms_conditions: {
+      type: DataTypes.TEXT,
+      defaultValue: "",
+    },
+    gst_number: {
+      type: DataTypes.STRING,
+      defaultValue: "",
+    },
+    company_logo: {
+      type: DataTypes.STRING,
+      defaultValue: "",
+    },
+    bill_stamp: {
+      type: DataTypes.JSON,
+      defaultValue: {},
+    },
+    stock_value: {
+      type: DataTypes.STRING,
+      defaultValue: "no",
+    },
+    ledger_regions: {
+      type: DataTypes.JSON,
+      defaultValue: [],
+    },
+    access: {
+      type: DataTypes.JSON,
+      defaultValue: [],
+    },
+    features_access: {
+      type: DataTypes.JSON,
+      defaultValue: [],
+    },
+
     created_at: {
       type: DataTypes.BIGINT,
       defaultValue: () => Math.floor(Date.now() / 1000),
@@ -90,6 +125,16 @@ const User = sequelize.define(
         const timestamp = Math.floor(Date.now() / 1000);
         user.created_at = timestamp;
         user.modified_at = timestamp;
+
+        // Initialize new fields with default values
+        user.terms_conditions = user.terms_conditions || "";
+        user.gst_number = user.gst_number || "";
+        user.company_logo = user.company_logo || "";
+        user.bill_stamp = user.bill_stamp || {};
+        user.stock_value = user.stock_value || "no";
+        user.ledger_regions = user.ledger_regions || [];
+        user.access = user.access || [];
+        user.features_access = user.features_access || [];
       },
       beforeUpdate: (user) => {
         user.modified_at = Math.floor(Date.now() / 1000);

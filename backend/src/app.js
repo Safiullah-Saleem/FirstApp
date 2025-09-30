@@ -3,7 +3,8 @@ const bodyParser = require("body-parser");
 const cors = require("cors");
 const { testConnection } = require("./config/database");
 const userRoutes = require("./routes/userRoutes");
-const employeeRoutes = require("./routes/employeeRoutes"); // Add this line
+const employeeRoutes = require("./routes/employeeRoutes");
+const companyRoutes = require("./routes/companyRoutes"); 
 
 const app = express();
 
@@ -28,7 +29,8 @@ testConnection();
 
 // Routes
 app.use("/api/users", userRoutes);
-app.use("/api/employees", employeeRoutes); // Add this line
+app.use("/api/employees", employeeRoutes);
+app.use("/api/company", companyRoutes); 
 
 // Basic route
 app.get("/", (req, res) => {
