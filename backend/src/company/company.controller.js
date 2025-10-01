@@ -1,4 +1,4 @@
-const User = require("../models/User");
+const User = require("../user/user.model");
 
 // Update Company Settings
 const updateCompany = async (req, res) => {

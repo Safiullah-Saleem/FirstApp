@@ -3,7 +3,7 @@ const {
   updateCompany,
   getCompany,
   updateCompanyPassword,
-} = require("../controllers/companyController");
+} = require("../company/company.controller");
 
 const router = express.Router();
 

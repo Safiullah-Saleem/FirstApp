@@ -4,7 +4,7 @@ const {
   employeeLogin,
   getAllEmployees,
   getEmployee,
-} = require("../controllers/employeeController");
+} = require("./employee.controller");
 
 const router = express.Router();
 

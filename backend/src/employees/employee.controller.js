@@ -1,12 +1,12 @@
 const { Op } = require("sequelize");
-const Employee = require("../models/Employee");
-const User = require("../models/User");
+const Employee = require("./employee.model");
+const User = require("../user/user.model");
 const { generateToken } = require("../utils/authUtils");
 
 // Employee Register
 const saveUser = async (req, res) => {
   try {
-    console.log("=== 👥 EMPLOYEE REGISTER ===");
+    console.log("=== EMPLOYEE REGISTER ===");
     console.log("Request body:", req.body);
 
     let employeeData;
