@@ -11,7 +11,7 @@ const Item = sequelize.define(
     },
     itemId: {
       type: DataTypes.STRING,
-      unique: true,
+      // uniqueness is enforced per company via composite index below
     },
     _id: {
       type: DataTypes.STRING,
@@ -56,7 +56,7 @@ const Item = sequelize.define(
     },
     barCode: {
       type: DataTypes.STRING,
-      unique: true,
+      // uniqueness is enforced per company via composite index below
     },
     itemCode: {
       type: DataTypes.STRING,
@@ -106,6 +106,17 @@ const Item = sequelize.define(
       type: DataTypes.INTEGER,
       defaultValue: 0,
     },
+    box: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+    },
+    piecesPerBox: {
+      type: DataTypes.INTEGER,
+      defaultValue: 0,
+    },
+    pricePerPiece: {
+      type: DataTypes.DECIMAL(10, 2),
+    },
     saleLabel: {
       type: DataTypes.STRING,
     },
@@ -129,15 +140,36 @@ const Item = sequelize.define(
   {
     tableName: "items",
     timestamps: false,
+    indexes: [
+      {
+        unique: true,
+        fields: ["company_code", "barCode"],
+        name: "uniq_company_barcode",
+      },
+      {
+        unique: true,
+        fields: ["company_code", "itemId"],
+        name: "uniq_company_itemid",
+      },
+    ],
     hooks: {
       beforeCreate: async (item) => {
         // Generate unique itemId if not provided
         if (!item.itemId) {
           item.itemId = Math.floor(1000 + Math.random() * 9000).toString();
         }
-        // Generate unique _id if not provided
+        // Ensure globally unique _id (regenerate when duplicate)
+        const crypto = require("crypto");
         if (!item._id) {
-          item._id = require("crypto").randomBytes(16).toString("hex");
+          item._id = crypto.randomBytes(16).toString("hex");
+        }
+        let attempts = 0;
+        // Use the model itself inside hook to check uniqueness
+        while (attempts < 5) {
+          const exists = await Item.count({ where: { _id: item._id } });
+          if (exists === 0) break;
+          item._id = crypto.randomBytes(16).toString("hex");
+          attempts++;
         }
 
         const timestamp = Math.floor(Date.now() / 1000);

@@ -20,7 +20,16 @@ const testConnection = async () => {
     await sequelize.authenticate();
     console.log("PostgreSQL connection established successfully.");
 
-    // ⚠️ UPDATE THIS LINE - Add { alter: true }
+    // Drop legacy global unique constraints if they exist (migrating to composite uniques)
+    try {
+      await sequelize.query('ALTER TABLE "items" DROP CONSTRAINT IF EXISTS items_itemId_key;');
+      await sequelize.query('ALTER TABLE "items" DROP CONSTRAINT IF EXISTS items_barCode_key;');
+      console.log("Dropped legacy unique constraints on items.itemId/barCode (if existed).");
+    } catch (e) {
+      console.warn("Warning dropping legacy constraints:", e.message);
+    }
+
+    // Sync models and indexes
     await sequelize.sync({ alter: true });
     console.log("Database tables updated with new columns.");
   } catch (error) {
