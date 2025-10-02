@@ -515,6 +515,105 @@ const updateItem = async (req, res) => {
   }
 };
 
+// Get Inventory (fetch all items for a company)
+const getInventory = async (req, res) => {
+  try {
+    console.log("=== GET INVENTORY ===");
+    console.log("Request body:", req.body);
+
+    let companyCode;
+
+    // Handle request format
+    if (req.body.request && req.body.request.data) {
+      companyCode = req.body.request.data.company_code;
+    } else if (req.body.data) {
+      companyCode = req.body.data.company_code;
+    } else {
+      companyCode = req.body.company_code;
+    }
+
+    if (!companyCode) {
+      return res.status(400).json({
+        response: {
+          status: {
+            statusCode: 400,
+            statusMessage: "Company code is required",
+          },
+          data: null,
+        },
+      });
+    }
+
+    // Step 1: Check if company exists in the database
+    const User = require("../user/user.model");
+    const company = await User.findOne({
+      where: { company_code: companyCode },
+      attributes: ["id", "company_code", "company_name"]
+    });
+
+    if (!company) {
+      return res.status(404).json({
+        response: {
+          status: {
+            statusCode: 404,
+            statusMessage: "Company not found",
+          },
+          data: null,
+        },
+      });
+    }
+
+    console.log(`Company found: ${company.company_name} (${companyCode})`);
+
+    // Step 2: Fetch items for the validated company
+    const items = await Item.findAll({
+      where: { company_code: companyCode },
+      order: [['created_at', 'DESC']]
+    });
+
+    // Step 3: Check if any items exist
+    if (!items || items.length === 0) {
+      return res.status(404).json({
+        response: {
+          status: {
+            statusCode: 404,
+            statusMessage: "No inventory found for this company",
+          },
+          data: null,
+        },
+      });
+    }
+
+    // Step 4: Serialize items and return
+    const serializedItems = items.map(item => serializeItem(item));
+
+    console.log(`Inventory fetched for company ${companyCode}: ${items.length} items`);
+
+    res.json({
+      response: {
+        status: {
+          statusCode: 200,
+          statusMessage: "OK"
+        },
+        data: {
+          inventory: serializedItems
+        }
+      }
+    });
+  } catch (error) {
+    console.error("GET INVENTORY ERROR:", error);
+    res.status(500).json({
+      response: {
+        status: {
+          statusCode: 500,
+          statusMessage: "Internal server error",
+        },
+        data: null,
+      },
+    });
+  }
+};
+
 // Delete Item (supports path param or wrapped payload) and scoping by company_code
 const deleteItem = async (req, res) => {
   try {
@@ -605,4 +704,5 @@ module.exports = {
   getItem,
   updateItem,
   deleteItem,
+  getInventory,
 };

@@ -7,6 +7,7 @@ const { testConnection } = require("./config/database");
 const userRoutes = require("./user/user.routes");
 const employeeRoutes = require("./employees/employee.routes");
 const companyRoutes = require("./company/company.routes");
+const billingRoutes = require("./billing/billing.routes");
 
 console.log("🟢 Loading item routes...");
 try {
@@ -45,6 +46,7 @@ app.use("/api/users", userRoutes);
 app.use("/api/employees", employeeRoutes);
 app.use("/api/company", companyRoutes);
 app.use("/api/items", itemRoutes);
+app.use("/api/billing", billingRoutes);
 
 // Add a direct test route to verify items functionality
 app.get("/api/debug-items", (req, res) => {
@@ -65,6 +67,7 @@ app.get("/", (req, res) => {
       "/api/employees",
       "/api/company",
       "/api/items",
+      "/api/billing",
       "/api/debug-items",
     ],
   });

@@ -5,6 +5,7 @@ const {
   getItem,
   updateItem,
   deleteItem,
+  getInventory,
 } = require("./item.controller");
 
 const router = express.Router();
@@ -16,5 +17,6 @@ router.get("/:id", getItem);
 router.put("/update", updateItem);
 router.delete("/:id", deleteItem);
 router.post("/delete", deleteItem);
+router.post("/inventory", getInventory);
 
 module.exports = router;

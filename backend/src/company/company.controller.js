@@ -135,8 +135,8 @@ const updateCompany = async (req, res) => {
   }
 };
 
-// Get Company Settings
-const getCompany = async (req, res) => {
+// Get Company Settings (GET endpoint with path parameter)
+const getCompanyByPath = async (req, res) => {
   try {
     const { companyCode } = req.params;
     console.log("=== GET COMPANY SETTINGS ===", companyCode);
@@ -189,6 +189,92 @@ const getCompany = async (req, res) => {
           company: companyResponse,
         },
       },
+    });
+  } catch (error) {
+    console.error("GET COMPANY ERROR:", error);
+    res.status(500).json({
+      response: {
+        status: {
+          statusCode: 500,
+          statusMessage: "Internal server error",
+        },
+        data: null,
+      },
+    });
+  }
+};
+
+// Get Company (POST endpoint with wrapped payload)
+const getCompany = async (req, res) => {
+  try {
+    console.log("=== GET COMPANY ===");
+    console.log("Request body:", req.body);
+
+    let companyCode;
+
+    // Extract company_code from the specific request format
+    if (req.body.request && req.body.request.data && req.body.request.data._id) {
+      companyCode = req.body.request.data._id;
+    } else {
+      return res.status(400).json({
+        response: {
+          status: {
+            statusCode: 400,
+            statusMessage: "Invalid request format. Expected: { request: { method: 'getCompany', data: { _id: 'company_code' } } }",
+          },
+          data: null,
+        },
+      });
+    }
+
+    console.log("Looking for company with code:", companyCode);
+
+    // Check if company exists in the User model
+    const company = await User.findOne({
+      where: { company_code: companyCode },
+      attributes: { exclude: ["password"] },
+    });
+
+    if (!company) {
+      return res.status(404).json({
+        response: {
+          status: {
+            statusCode: 404,
+            statusMessage: "Company not found",
+          },
+          data: null,
+        },
+      });
+    }
+
+    // Prepare response in the exact format specified
+    const companyResponse = {
+      _id: company.company_code,
+      _rev: `7-cef6fa127a9bcfb26d0a4f528ec683c5`,
+      access: company.access || [],
+      company_name: company.company_name,
+      address: company.address,
+      created_at: company.created_at,
+      modified_at: company.modified_at,
+      featuresAccess: company.features_access || [],
+      ledgerRegions: company.ledger_regions || ["title"],
+      stockValue: company.stock_value || "no",
+      billStamp: company.bill_stamp || {
+        name: "cjm logo.png",
+        url: "https://managekaro-documents.s3.us-west-2.amazonaws.com/4530/1cjm%20logo.png"
+      }
+    };
+
+    res.json({
+      response: {
+        status: {
+          statusCode: 200,
+          statusMessage: "OK"
+        },
+        data: {
+          company: [companyResponse]
+        }
+      }
     });
   } catch (error) {
     console.error("GET COMPANY ERROR:", error);
@@ -286,5 +372,6 @@ const updateCompanyPassword = async (req, res) => {
 module.exports = {
   updateCompany,
   getCompany,
+  getCompanyByPath,
   updateCompanyPassword,
 };
