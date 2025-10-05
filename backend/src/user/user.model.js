@@ -26,10 +26,6 @@ const User = sequelize.define(
       primaryKey: true,
       autoIncrement: true,
     },
-    name: {
-      type: DataTypes.STRING,
-      allowNull: false,
-    },
     email: {
       type: DataTypes.STRING,
       allowNull: false,
@@ -43,10 +39,6 @@ const User = sequelize.define(
       allowNull: false,
     },
     password: {
-      type: DataTypes.STRING,
-      allowNull: false,
-    },
-    company_name: {
       type: DataTypes.STRING,
       allowNull: false,
     },
@@ -101,6 +93,45 @@ const User = sequelize.define(
       defaultValue: [],
     },
 
+    // Fields that exist in the database but weren't in the model
+    first_name: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    last_name: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    role: {
+      type: DataTypes.ENUM('admin', 'user', 'manager'),
+      defaultValue: 'user',
+    },
+    is_active: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: true,
+    },
+    email_verified: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+    },
+    last_login: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+    profile_image: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    date_of_birth: {
+      type: DataTypes.DATEONLY,
+      allowNull: true,
+    },
+    updated_at: {
+      type: DataTypes.DATE,
+      allowNull: false,
+      defaultValue: DataTypes.NOW,
+    },
+
     created_at: {
       type: DataTypes.BIGINT,
       defaultValue: () => Math.floor(Date.now() / 1000),
@@ -135,9 +166,18 @@ const User = sequelize.define(
         user.ledger_regions = user.ledger_regions || [];
         user.access = user.access || [];
         user.features_access = user.features_access || [];
+
+        // Initialize additional fields
+        user.first_name = user.first_name || "";
+        user.last_name = user.last_name || "";
+        user.role = user.role || "user";
+        user.is_active = user.is_active !== undefined ? user.is_active : true;
+        user.email_verified = user.email_verified !== undefined ? user.email_verified : false;
+        user.updated_at = new Date().toISOString();
       },
       beforeUpdate: (user) => {
         user.modified_at = Math.floor(Date.now() / 1000);
+        user.updated_at = new Date().toISOString();
       },
     },
   }
