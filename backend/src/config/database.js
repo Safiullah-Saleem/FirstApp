@@ -39,9 +39,9 @@ const testConnection = async () => {
       console.warn("Warning dropping legacy constraints:", e.message);
     }
 
-    // Sync models and indexes
-    await sequelize.sync({ alter: true });
-    console.log("Database tables updated with new columns.");
+    // Sync models and indexes (safe mode to avoid conflicts)
+    await sequelize.sync({ force: false, alter: false });
+    console.log("Database tables verified and ready.");
   } catch (error) {
     console.error("Database connection error:", error.message);
   }
