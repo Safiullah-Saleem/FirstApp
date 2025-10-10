@@ -23,7 +23,10 @@ const pruneNullFields = (value) => {
 };
 
 const serializeItem = (itemInstance) => {
-  const plain = typeof itemInstance.toJSON === "function" ? itemInstance.toJSON() : itemInstance;
+  const plain =
+    typeof itemInstance.toJSON === "function"
+      ? itemInstance.toJSON()
+      : itemInstance;
   return pruneNullFields(plain);
 };
 
@@ -31,7 +34,8 @@ const serializeItem = (itemInstance) => {
 const normalizeItemData = (raw) => {
   const item = { ...raw };
 
-  const toNumber = (v) => (v === undefined || v === null || v === "" ? undefined : Number(v));
+  const toNumber = (v) =>
+    v === undefined || v === null || v === "" ? undefined : Number(v);
 
   // Coerce common numeric fields
   const numericKeys = [
@@ -58,7 +62,10 @@ const normalizeItemData = (raw) => {
 
   // Batch items: aggregate quantity and optionally override prices per newItem
   if (Array.isArray(item.batchNumber) && item.batchNumber.length > 0) {
-    const totalQty = item.batchNumber.reduce((sum, b) => sum + (toNumber(b.quantity) || 0), 0);
+    const totalQty = item.batchNumber.reduce(
+      (sum, b) => sum + (toNumber(b.quantity) || 0),
+      0
+    );
     if (!item.quantity || item.quantity === 0) item.quantity = totalQty;
 
     // Use first batch's overrides if base pricing is empty/zero
@@ -68,7 +75,11 @@ const normalizeItemData = (raw) => {
       const maybeApply = (field) => {
         const base = toNumber(item[field]);
         const over = toNumber(overrides[field]);
-        if ((base === undefined || base === 0) && over !== undefined && !Number.isNaN(over)) {
+        if (
+          (base === undefined || base === 0) &&
+          over !== undefined &&
+          !Number.isNaN(over)
+        ) {
           item[field] = over;
         }
       };
@@ -76,25 +87,39 @@ const normalizeItemData = (raw) => {
       maybeApply("costPrice");
       maybeApply("companyPrice");
       maybeApply("whole_sale_price");
-      if (!item.saleLabel && overrides.saleLabel) item.saleLabel = overrides.saleLabel;
+      if (!item.saleLabel && overrides.saleLabel)
+        item.saleLabel = overrides.saleLabel;
     }
 
     // If batch carries box info, surface it to top-level
-    const bWithBox = item.batchNumber.find((b) => b && (b.box || b.piecesPerBox || b.pricePerPiece || b.totalBoxes));
+    const bWithBox = item.batchNumber.find(
+      (b) => b && (b.box || b.piecesPerBox || b.pricePerPiece || b.totalBoxes)
+    );
     if (bWithBox) {
       if (typeof bWithBox.box === "boolean") item.box = bWithBox.box;
-      if (toNumber(bWithBox.piecesPerBox)) item.piecesPerBox = toNumber(bWithBox.piecesPerBox);
-      if (toNumber(bWithBox.pricePerPiece)) item.pricePerPiece = toNumber(bWithBox.pricePerPiece);
-      if (toNumber(bWithBox.totalBoxes)) item.totalBoxes = toNumber(bWithBox.totalBoxes);
+      if (toNumber(bWithBox.piecesPerBox))
+        item.piecesPerBox = toNumber(bWithBox.piecesPerBox);
+      if (toNumber(bWithBox.pricePerPiece))
+        item.pricePerPiece = toNumber(bWithBox.pricePerPiece);
+      if (toNumber(bWithBox.totalBoxes))
+        item.totalBoxes = toNumber(bWithBox.totalBoxes);
       // If quantity still missing but boxes present, compute
-      if ((!item.quantity || item.quantity === 0) && item.piecesPerBox && item.totalBoxes) {
+      if (
+        (!item.quantity || item.quantity === 0) &&
+        item.piecesPerBox &&
+        item.totalBoxes
+      ) {
         item.quantity = item.piecesPerBox * item.totalBoxes;
       }
     }
   }
 
   // Boxes/cotton (non-batch) normalization
-  if (item.box === true && item.piecesPerBox && (item.totalBoxes || item.numberOfBoxes)) {
+  if (
+    item.box === true &&
+    item.piecesPerBox &&
+    (item.totalBoxes || item.numberOfBoxes)
+  ) {
     const totalBoxes = toNumber(item.totalBoxes || item.numberOfBoxes) || 0;
     const piecesPerBox = toNumber(item.piecesPerBox) || 0;
     if ((!item.quantity || item.quantity === 0) && totalBoxes && piecesPerBox) {
@@ -133,114 +158,134 @@ const saveItem = async (req, res) => {
       itemData = req.body;
     }
 
-  console.log("Item data:", itemData);
-  console.log("Action:", action);
-  console.log("User:", userEmail);
+    console.log("Item data:", itemData);
+    console.log("Action:", action);
+    console.log("User:", userEmail);
 
-  const isUpdateIntent =
-    !!(itemData && (itemData._id || itemData.itemId)) ||
-    (typeof action === "string" && action.toLowerCase() === "updated");
+    const isUpdateIntent =
+      !!(itemData && (itemData._id || itemData.itemId)) ||
+      (typeof action === "string" && action.toLowerCase() === "updated");
 
-  // Validation
-  if (!itemData.company_code) {
-    return res.status(400).json({
-      response: {
-        status: {
-          statusCode: 400,
-          statusMessage: "Company code is required",
-        },
-        data: null,
-      },
-    });
-  }
-  if (!isUpdateIntent && !itemData.name) {
-    return res.status(400).json({
-      response: {
-        status: {
-          statusCode: 400,
-          statusMessage: "Item name is required",
-        },
-        data: null,
-      },
-    });
-  }
-
-  // Pre-check duplicates within the company (barcode and itemId) for CREATE only
-  if (!isUpdateIntent) {
-    const dupWhere = [];
-    if (itemData.barCode) dupWhere.push({ barCode: itemData.barCode });
-    if (itemData.itemId) dupWhere.push({ itemId: String(itemData.itemId) });
-    if (dupWhere.length > 0) {
-      const { Op } = require("sequelize");
-      const dup = await Item.findOne({
-        where: { company_code: itemData.company_code, [Op.or]: dupWhere },
-      });
-      if (dup) {
-        return res.status(409).json({
-          response: {
-            status: {
-              statusCode: 409,
-              statusMessage:
-                "Item with this barcode or itemId already exists for the company",
-            },
-            data: null,
-          },
-        });
-      }
-    }
-  }
-
-  // UPDATE flow via saveItem when _id/itemId present or action === "Updated"
-  if (isUpdateIntent) {
-    const { Op } = require("sequelize");
-    const lookupId = itemData._id || itemData.itemId;
-    const existing = await Item.findOne({
-      where: {
-        company_code: itemData.company_code,
-        [Op.or]: [{ _id: lookupId }, { itemId: String(lookupId) }],
-      },
-    });
-    if (!existing) {
-      return res.status(404).json({
+    // Validation
+    if (!itemData.company_code) {
+      return res.status(400).json({
         response: {
-          status: { statusCode: 404, statusMessage: "Item not found for update" },
+          status: {
+            statusCode: 400,
+            statusMessage: "Company code is required",
+          },
+          data: null,
+        },
+      });
+    }
+    if (!isUpdateIntent && !itemData.name) {
+      return res.status(400).json({
+        response: {
+          status: {
+            statusCode: 400,
+            statusMessage: "Item name is required",
+          },
           data: null,
         },
       });
     }
 
-    // Duplicate checks if changing identifiers
-    const updateDupWhere = [];
-    if (itemData.barCode && itemData.barCode !== existing.barCode) updateDupWhere.push({ barCode: itemData.barCode });
-    if (itemData.itemId && String(itemData.itemId) !== String(existing.itemId)) updateDupWhere.push({ itemId: String(itemData.itemId) });
-    if (updateDupWhere.length > 0) {
-      const conflict = await Item.findOne({ where: { company_code: itemData.company_code, [Op.or]: updateDupWhere } });
-      if (conflict) {
-        return res.status(409).json({
+    // Pre-check duplicates within the company (barcode and itemId) for CREATE only
+    if (!isUpdateIntent) {
+      const dupWhere = [];
+      if (itemData.barCode) dupWhere.push({ barCode: itemData.barCode });
+      if (itemData.itemId) dupWhere.push({ itemId: String(itemData.itemId) });
+      if (dupWhere.length > 0) {
+        const { Op } = require("sequelize");
+        const dup = await Item.findOne({
+          where: { company_code: itemData.company_code, [Op.or]: dupWhere },
+        });
+        if (!dup) {
+          return res.status(409).json({
+            response: {
+              status: {
+                statusCode: 409,
+                statusMessage:
+                  "Item with this barcode or itemId already exists for the company",
+              },
+              data: null,
+            },
+          });
+        }
+      }
+    }
+
+    // UPDATE flow via saveItem when _id/itemId present or action === "Updated"
+    if (isUpdateIntent) {
+      const { Op } = require("sequelize");
+      const lookupId = itemData._id || itemData.itemId;
+      const existing = await Item.findOne({
+        where: {
+          company_code: itemData.company_code,
+          [Op.or]: [{ _id: lookupId }, { itemId: String(lookupId) }],
+        },
+      });
+      if (!existing) {
+        return res.status(404).json({
           response: {
-            status: { statusCode: 409, statusMessage: "Item with this barcode or itemId already exists for the company" },
+            status: {
+              statusCode: 404,
+              statusMessage: "Item not found for update",
+            },
             data: null,
           },
         });
       }
+
+      // Duplicate checks if changing identifiers
+      const updateDupWhere = [];
+      if (itemData.barCode && itemData.barCode !== existing.barCode)
+        updateDupWhere.push({ barCode: itemData.barCode });
+      if (
+        itemData.itemId &&
+        String(itemData.itemId) !== String(existing.itemId)
+      )
+        updateDupWhere.push({ itemId: String(itemData.itemId) });
+      if (updateDupWhere.length > 0) {
+        const conflict = await Item.findOne({
+          where: {
+            company_code: itemData.company_code,
+            [Op.or]: updateDupWhere,
+          },
+        });
+        if (conflict) {
+          return res.status(409).json({
+            response: {
+              status: {
+                statusCode: 409,
+                statusMessage:
+                  "Item with this barcode or itemId already exists for the company",
+              },
+              data: null,
+            },
+          });
+        }
+      }
+
+      const normalizedUpdate = normalizeItemData(itemData);
+      await existing.update(normalizedUpdate);
+
+      const itemResponse = {
+        ...serializeItem(existing),
+        action: action || "Updated",
+        user: userEmail || "system",
+      };
+
+      return res.json({
+        response: {
+          status: {
+            statusCode: 200,
+            statusMessage: "Item updated successfully",
+          },
+          data: { item: itemResponse },
+        },
+      });
     }
-
-    const normalizedUpdate = normalizeItemData(itemData);
-    await existing.update(normalizedUpdate);
-
-    const itemResponse = {
-      ...serializeItem(existing),
-      action: action || "Updated",
-      user: userEmail || "system",
-    };
-
-    return res.json({
-      response: {
-        status: { statusCode: 200, statusMessage: "Item updated successfully" },
-        data: { item: itemResponse },
-      },
-    });
-  }
 
     // Normalize variants (batch/boxes)
     const normalized = normalizeItemData(itemData);
@@ -260,7 +305,9 @@ const saveItem = async (req, res) => {
         break;
       } catch (e) {
         const dupId =
-          e && (e.name === "SequelizeUniqueConstraintError" || e.original?.code === "23505") &&
+          e &&
+          (e.name === "SequelizeUniqueConstraintError" ||
+            e.original?.code === "23505") &&
           String(e.original?.constraint || "").includes("_id");
         if (dupId) {
           payload._id = generateUniqueId();
@@ -294,7 +341,9 @@ const saveItem = async (req, res) => {
   } catch (error) {
     console.error("SAVE ITEM ERROR:", error);
     const isUniqueViolation =
-      error && (error.name === "SequelizeUniqueConstraintError" || error.original?.code === "23505");
+      error &&
+      (error.name === "SequelizeUniqueConstraintError" ||
+        error.original?.code === "23505");
     const isInvalidText = error && error.original?.code === "22P02"; // invalid_text_representation
     const isNotNullViolation = error && error.original?.code === "23502";
     const message = isUniqueViolation
@@ -304,7 +353,11 @@ const saveItem = async (req, res) => {
       : isNotNullViolation
       ? "Missing required field"
       : "Internal server error";
-    const statusCode = isUniqueViolation ? 409 : isInvalidText || isNotNullViolation ? 400 : 500;
+    const statusCode = isUniqueViolation
+      ? 409
+      : isInvalidText || isNotNullViolation
+      ? 400
+      : 500;
     res.status(statusCode).json({
       response: {
         status: {
@@ -515,24 +568,43 @@ const updateItem = async (req, res) => {
   }
 };
 
-// Get Inventory (fetch all items for a company)
+// Get Inventory (fetch all items for a company) - SUPER DEBUG VERSION
 const getInventory = async (req, res) => {
   try {
-    console.log("=== GET INVENTORY ===");
+    console.log("=== GET INVENTORY DEBUG ===");
+    console.log("Request method:", req.method);
+    console.log("Request URL:", req.url);
+    console.log("Request query:", req.query);
     console.log("Request body:", req.body);
+    console.log("Request params:", req.params);
 
     let companyCode;
 
-    // Handle request format
-    if (req.body.request && req.body.request.data) {
-      companyCode = req.body.request.data.company_code;
-    } else if (req.body.data) {
-      companyCode = req.body.data.company_code;
+    // Handle both GET and POST requests
+    if (req.method === "GET") {
+      companyCode = req.query.company_code;
+      console.log("GET request - company_code from query:", companyCode);
     } else {
-      companyCode = req.body.company_code;
+      // Handle POST request format
+      if (req.body.request && req.body.request.data) {
+        companyCode = req.body.request.data.company_code;
+        console.log(
+          "POST request - company_code from request.data:",
+          companyCode
+        );
+      } else if (req.body.data) {
+        companyCode = req.body.data.company_code;
+        console.log("POST request - company_code from data:", companyCode);
+      } else {
+        companyCode = req.body.company_code;
+        console.log("POST request - company_code from body:", companyCode);
+      }
     }
 
+    console.log("Final company code:", companyCode);
+
     if (!companyCode) {
+      console.log("❌ Company code is missing");
       return res.status(400).json({
         response: {
           status: {
@@ -544,14 +616,21 @@ const getInventory = async (req, res) => {
       });
     }
 
+    console.log("🔍 Step 1: Checking if company exists...");
+
     // Step 1: Check if company exists in the database
     const User = require("../user/user.model");
+    console.log("✅ User model imported");
+
     const company = await User.findOne({
       where: { company_code: companyCode },
-      attributes: ["id", "company_code", "company_name"]
+      attributes: ["id", "company_code", "company_name"],
     });
 
+    console.log("Company search result:", company ? company.toJSON() : "NULL");
+
     if (!company) {
+      console.log("❌ Company not found in database");
       return res.status(404).json({
         response: {
           status: {
@@ -563,16 +642,21 @@ const getInventory = async (req, res) => {
       });
     }
 
-    console.log(`Company found: ${company.company_name} (${companyCode})`);
+    console.log(`✅ Company found: ${company.company_name} (${companyCode})`);
+
+    console.log("🔍 Step 2: Fetching items for company...");
 
     // Step 2: Fetch items for the validated company
     const items = await Item.findAll({
       where: { company_code: companyCode },
-      order: [['created_at', 'DESC']]
+      order: [["created_at", "DESC"]],
     });
+
+    console.log(`✅ Items found: ${items ? items.length : 0}`);
 
     // Step 3: Check if any items exist
     if (!items || items.length === 0) {
+      console.log("❌ No items found for this company");
       return res.status(404).json({
         response: {
           status: {
@@ -584,24 +668,29 @@ const getInventory = async (req, res) => {
       });
     }
 
-    // Step 4: Serialize items and return
-    const serializedItems = items.map(item => serializeItem(item));
+    console.log("🔍 Step 3: Serializing items...");
 
-    console.log(`Inventory fetched for company ${companyCode}: ${items.length} items`);
+    // Step 4: Serialize items and return
+    const serializedItems = items.map((item) => serializeItem(item));
+
+    console.log(
+      `🎉 Inventory fetched for company ${companyCode}: ${items.length} items`
+    );
 
     res.json({
       response: {
         status: {
           statusCode: 200,
-          statusMessage: "OK"
+          statusMessage: "OK",
         },
         data: {
-          inventory: serializedItems
-        }
-      }
+          inventory: serializedItems,
+        },
+      },
     });
   } catch (error) {
-    console.error("GET INVENTORY ERROR:", error);
+    console.error("❌ GET INVENTORY ERROR:", error);
+    console.error("Error stack:", error.stack);
     res.status(500).json({
       response: {
         status: {
@@ -623,7 +712,12 @@ const deleteItem = async (req, res) => {
     let companyCode = req.query.company_code;
 
     if (!itemId) {
-      if (req.body && req.body.request && req.body.request.data && req.body.request.data.item) {
+      if (
+        req.body &&
+        req.body.request &&
+        req.body.request.data &&
+        req.body.request.data.item
+      ) {
         const wrapped = req.body.request.data.item;
         itemId = wrapped._id || wrapped.itemId || wrapped.barCode || wrapped.id;
         companyCode = wrapped.company_code || companyCode;

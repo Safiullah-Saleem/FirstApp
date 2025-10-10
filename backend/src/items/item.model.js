@@ -56,7 +56,9 @@ const Item = sequelize.define(
     },
     barCode: {
       type: DataTypes.STRING,
-      // uniqueness is enforced per company via composite index below
+      // Allow null values to avoid duplicate empty string issues
+      allowNull: true,
+      defaultValue: null,
     },
     itemCode: {
       type: DataTypes.STRING,
@@ -70,6 +72,7 @@ const Item = sequelize.define(
     },
     expiryDate: {
       type: DataTypes.DATE,
+      allowNull: true,
     },
     imgURL: {
       type: DataTypes.STRING,
@@ -145,6 +148,11 @@ const Item = sequelize.define(
         unique: true,
         fields: ["company_code", "barCode"],
         name: "uniq_company_barcode",
+        where: {
+          barCode: {
+            [sequelize.Sequelize.Op.ne]: null, // Only enforce uniqueness for non-null barcodes
+          },
+        },
       },
       {
         unique: true,
@@ -172,11 +180,31 @@ const Item = sequelize.define(
           attempts++;
         }
 
+        // Convert empty barcode to null to avoid unique constraint issues
+        if (item.barCode === "" || item.barCode === '""') {
+          item.barCode = null;
+        }
+
+        // Convert empty expiryDate to null
+        if (item.expiryDate === "" || item.expiryDate === "Invalid date") {
+          item.expiryDate = null;
+        }
+
         const timestamp = Math.floor(Date.now() / 1000);
         item.created_at = timestamp;
         item.modified_at = timestamp;
       },
       beforeUpdate: (item) => {
+        // Convert empty barcode to null to avoid unique constraint issues
+        if (item.barCode === "" || item.barCode === '""') {
+          item.barCode = null;
+        }
+
+        // Convert empty expiryDate to null
+        if (item.expiryDate === "" || item.expiryDate === "Invalid date") {
+          item.expiryDate = null;
+        }
+
         item.modified_at = Math.floor(Date.now() / 1000);
       },
     },

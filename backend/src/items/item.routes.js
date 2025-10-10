@@ -10,13 +10,16 @@ const {
 
 const router = express.Router();
 
-// Item routes
+// Item routes - CORRECT ORDER
+// Specific routes must come BEFORE dynamic routes
 router.post("/save", saveItem);
 router.get("/", getAllItems);
-router.get("/:id", getItem);
+router.get("/inventory", getInventory); // GET inventory - SPECIFIC ROUTE
+router.post("/inventory", getInventory); // POST inventory - SPECIFIC ROUTE
 router.put("/update", updateItem);
-router.delete("/:id", deleteItem);
 router.post("/delete", deleteItem);
-router.post("/inventory", getInventory);
+// DYNAMIC ROUTES MUST COME LAST
+router.get("/:id", getItem); // Dynamic route - COMES LAST
+router.delete("/:id", deleteItem); // Dynamic route - COMES LAST
 
 module.exports = router;
