@@ -190,17 +190,24 @@ const saveItem = async (req, res) => {
       });
     }
 
-    // Pre-check duplicates within the company (barcode and itemId) for CREATE only
+    // ✅ FIXED: Pre-check duplicates within the company (barcode and itemId) for CREATE only
     if (!isUpdateIntent) {
       const dupWhere = [];
       if (itemData.barCode) dupWhere.push({ barCode: itemData.barCode });
       if (itemData.itemId) dupWhere.push({ itemId: String(itemData.itemId) });
+
       if (dupWhere.length > 0) {
         const { Op } = require("sequelize");
-        const dup = await Item.findOne({
-          where: { company_code: itemData.company_code, [Op.or]: dupWhere },
+        const duplicateItem = await Item.findOne({
+          where: {
+            company_code: itemData.company_code,
+            [Op.or]: dupWhere,
+          },
         });
-        if (!dup) {
+
+        // ✅ CORRECT: Return error ONLY if duplicate IS found
+        if (duplicateItem) {
+          console.log("❌ Duplicate item found:", duplicateItem.toJSON());
           return res.status(409).json({
             response: {
               status: {
@@ -318,7 +325,7 @@ const saveItem = async (req, res) => {
       }
     }
 
-    console.log("Item created successfully:", newItem.name);
+    console.log("✅ Item created successfully:", newItem.name);
 
     // Prepare response
     const itemResponse = {
@@ -800,3 +807,4 @@ module.exports = {
   deleteItem,
   getInventory,
 };
+

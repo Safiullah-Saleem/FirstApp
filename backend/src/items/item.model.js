@@ -190,11 +190,28 @@ const Item = sequelize.define(
           item.expiryDate = null;
         }
 
+        // Convert weightType to proper boolean
+        if (typeof item.weightType === "string") {
+          item.weightType =
+            item.weightType === "true" ||
+            item.weightType === "1" ||
+            item.weightType === "1.00";
+        } else if (typeof item.weightType === "number") {
+          item.weightType = Boolean(item.weightType);
+        }
+
+        // Convert box to proper boolean
+        if (typeof item.box === "string") {
+          item.box = item.box === "true" || item.box === "1";
+        } else if (typeof item.box === "number") {
+          item.box = Boolean(item.box);
+        }
+
         const timestamp = Math.floor(Date.now() / 1000);
         item.created_at = timestamp;
         item.modified_at = timestamp;
       },
-      beforeUpdate: (item) => {
+      beforeUpdate: async (item) => {
         // Convert empty barcode to null to avoid unique constraint issues
         if (item.barCode === "" || item.barCode === '""') {
           item.barCode = null;
@@ -205,7 +222,55 @@ const Item = sequelize.define(
           item.expiryDate = null;
         }
 
+        // Convert weightType to proper boolean - FIXED
+        if (typeof item.weightType === "string") {
+          item.weightType =
+            item.weightType === "true" ||
+            item.weightType === "1" ||
+            item.weightType === "1.00";
+        } else if (typeof item.weightType === "number") {
+          item.weightType = Boolean(item.weightType);
+        }
+
+        // Convert box to proper boolean
+        if (typeof item.box === "string") {
+          item.box = item.box === "true" || item.box === "1";
+        } else if (typeof item.box === "number") {
+          item.box = Boolean(item.box);
+        }
+
+        // Ensure numeric fields are properly converted
+        if (item.weight && typeof item.weight === "string") {
+          item.weight = parseFloat(item.weight) || 0;
+        }
+
+        if (item.discount && typeof item.discount === "string") {
+          item.discount = parseFloat(item.discount) || 0;
+        }
+
+        if (item.quantity && typeof item.quantity === "string") {
+          item.quantity = parseInt(item.quantity) || 0;
+        }
+
         item.modified_at = Math.floor(Date.now() / 1000);
+      },
+      beforeSave: async (item) => {
+        // Additional safety check for data types
+        if (item.weightType !== undefined && item.weightType !== null) {
+          if (typeof item.weightType === "string") {
+            item.weightType =
+              item.weightType === "true" ||
+              item.weightType === "1" ||
+              item.weightType === "1.00";
+          }
+        }
+
+        // Ensure box is proper boolean
+        if (item.box !== undefined && item.box !== null) {
+          if (typeof item.box === "string") {
+            item.box = item.box === "true" || item.box === "1";
+          }
+        }
       },
     },
   }
