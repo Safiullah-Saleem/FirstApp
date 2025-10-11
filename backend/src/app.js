@@ -73,6 +73,14 @@ app.get("/", (req, res) => {
   });
 });
 
+// Health check for Railway
+app.get("/health", (req, res) => {
+  res.status(200).json({
+    status: "healthy",
+    timestamp: new Date().toISOString(),
+  });
+});
+
 // Error handling
 app.use((err, req, res, next) => {
   console.error("Global Error Handler:", err);
@@ -86,3 +94,36 @@ app.use((req, res) => {
 });
 
 module.exports = app;
+
+// ✅ SERVER STARTUP CODE - ADDED FOR RAILWAY
+const PORT = process.env.PORT || 8000;
+const HOST = "0.0.0.0";
+
+// Only start the server if this file is run directly (not when required)
+if (require.main === module) {
+  const server = app.listen(PORT, HOST, () => {
+    console.log(`🚀 Server running on http://${HOST}:${PORT}`);
+    console.log(`📊 Environment: ${process.env.NODE_ENV || "development"}`);
+    console.log("✅ Application is ready to receive requests");
+    console.log(
+      `🌐 Public URL: https://devoted-education-production.up.railway.app`
+    );
+  });
+
+  // Graceful shutdown handling for Railway
+  process.on("SIGTERM", () => {
+    console.log("🛑 Received SIGTERM, shutting down gracefully...");
+    server.close(() => {
+      console.log("✅ Server closed successfully");
+      process.exit(0);
+    });
+  });
+
+  process.on("SIGINT", () => {
+    console.log("🛑 Received SIGINT, shutting down gracefully...");
+    server.close(() => {
+      console.log("✅ Server closed successfully");
+      process.exit(0);
+    });
+  });
+}

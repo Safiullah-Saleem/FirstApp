@@ -10,7 +10,4 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log(
     `🌐 Public URL: https://devoted-education-production.up.railway.app`
   );
-  console.log(
-    `🗄️  Database: ${process.env.DB_NAME || "Connected via DATABASE_URL"}`
-  );
 });
