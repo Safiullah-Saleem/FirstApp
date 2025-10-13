@@ -1,10 +1,12 @@
 const Item = require("./item.model");
 const ImageKitService = require("../services/imageKitService");
 const multer = require("multer");
+const { Op } = require("sequelize");
+const crypto = require("crypto");
 
 // Generate unique ID
 const generateUniqueId = () => {
-  return require("crypto").randomBytes(16).toString("hex");
+  return crypto.randomBytes(16).toString("hex");
 };
 
 // Remove null/undefined fields recursively from objects
@@ -137,36 +139,155 @@ const normalizeItemData = (raw) => {
   return item;
 };
 
+// Safe item lookup function that handles missing itemid column
+const safeFindItem = async (lookupId, company_code) => {
+  try {
+    // First try with just _id (safe approach)
+    return await Item.findOne({
+      where: {
+        _id: lookupId,
+        company_code: company_code,
+      },
+    });
+  } catch (error) {
+    // If there's a database error, try alternative lookup methods
+    if (error.name === "SequelizeDatabaseError") {
+      console.warn(
+        "Database error in item lookup, trying alternatives:",
+        error.message
+      );
+
+      // Try with barcode
+      const byBarcode = await Item.findOne({
+        where: {
+          barCode: lookupId,
+          company_code: company_code,
+        },
+      });
+      if (byBarcode) return byBarcode;
+
+      // Try with numeric ID
+      if (!isNaN(lookupId)) {
+        const byId = await Item.findOne({
+          where: {
+            id: parseInt(lookupId),
+            company_code: company_code,
+          },
+        });
+        if (byId) return byId;
+      }
+    }
+    throw error;
+  }
+};
+
+// Safe duplicate check function
+const safeDuplicateCheck = async (
+  itemData,
+  isUpdate = false,
+  existingItem = null
+) => {
+  const dupWhere = [];
+
+  // Check barcode duplicates
+  if (itemData.barCode) {
+    dupWhere.push({ barCode: itemData.barCode });
+  }
+
+  if (dupWhere.length > 0) {
+    const duplicateItem = await Item.findOne({
+      where: {
+        company_code: itemData.company_code,
+        [Op.or]: dupWhere,
+      },
+    });
+
+    if (duplicateItem) {
+      // For updates, allow if it's the same item being updated
+      if (isUpdate && existingItem && duplicateItem._id === existingItem._id) {
+        return null; // No conflict
+      }
+      return duplicateItem;
+    }
+  }
+
+  return null;
+};
+
 // Save Item
 const saveItem = async (req, res) => {
   try {
     console.log("=== SAVE ITEM ===");
+    console.log("Content-Type:", req.get('Content-Type'));
     console.log("Request body:", req.body);
-    console.log(
-      "Uploaded file:",
-      req.file ? `Yes - ${req.file.originalname}` : "No"
-    );
+    console.log("Request fields:", req.body ? Object.keys(req.body) : 'No body');
+    
+    // 📁 Detailed file logging
+    if (req.file) {
+      console.log(`📁 File received: ${req.file.originalname}, size: ${req.file.size} bytes, type: ${req.file.mimetype}`);
+      console.log(`📁 File buffer length: ${req.file.buffer ? req.file.buffer.length : 'No buffer'}`);
+    } else {
+      console.log("📁 No file uploaded");
+    }
 
     let itemData;
     let action;
     let userEmail;
+    let rawData;
 
-    // Handle request format
-    if (req.body.request && req.body.request.data) {
-      itemData = req.body.request.data.item;
-      action = req.body.request.data.action;
-      userEmail = req.body.request.data.user;
-    } else if (req.body.data) {
-      itemData = req.body.data.item;
-      action = req.body.data.action;
-      userEmail = req.body.data.user;
+    // Handle different content types
+    const contentType = req.get('Content-Type') || '';
+    
+    if (contentType.includes('multipart/form-data')) {
+      console.log("📋 Processing multipart/form-data request");
+      console.log("📋 Form fields available:", Object.keys(req.body));
+      
+      // Extract JSON from form fields
+      if (req.body.data) {
+        console.log("📋 Found 'data' field in form data");
+        try {
+          rawData = JSON.parse(req.body.data);
+          console.log("📋 Successfully parsed JSON from form field");
+        } catch (parseError) {
+          console.error("❌ Failed to parse JSON from form field:", parseError.message);
+          return res.status(400).json({
+            response: {
+              status: {
+                statusCode: 400,
+                statusMessage: "Invalid JSON in form data",
+              },
+              data: null,
+            },
+          });
+        }
+      } else {
+        console.log("📋 No 'data' field found, using form fields directly");
+        rawData = req.body;
+      }
     } else {
-      itemData = req.body;
+      console.log("📋 Processing JSON request");
+      rawData = req.body;
     }
 
-    console.log("Item data:", itemData);
-    console.log("Action:", action);
-    console.log("User:", userEmail);
+    // Handle request format from parsed data
+    if (rawData.request && rawData.request.data) {
+      itemData = rawData.request.data.item;
+      action = rawData.request.data.action;
+      userEmail = rawData.request.data.user;
+      console.log("📋 Using request.data format");
+    } else if (rawData.data) {
+      itemData = rawData.data.item;
+      action = rawData.data.action;
+      userEmail = rawData.data.user;
+      console.log("📋 Using data format");
+    } else {
+      itemData = rawData;
+      console.log("📋 Using direct format");
+    }
+
+    console.log("📋 Parsed item data:", itemData);
+    console.log("📋 Action:", action);
+    console.log("📋 User:", userEmail);
 
     const isUpdateIntent =
       !!(itemData && (itemData._id || itemData.itemId)) ||
@@ -199,11 +320,17 @@ const saveItem = async (req, res) => {
     // ========== IMAGE UPLOAD TO IMAGEKIT ==========
     let imageKitResult = null;
     if (req.file) {
-      console.log("🖼️ Uploading image to ImageKit...");
+      console.log("🔄 Uploading to ImageKit...");
+      console.log(`📁 Processing file: ${req.file.originalname}`);
+      console.log(`📊 File size: ${req.file.size} bytes`);
+      console.log(`🏷️ File type: ${req.file.mimetype}`);
 
       const fileName = `item_${Date.now()}_${
         itemData.name?.replace(/[^a-zA-Z0-9]/g, "_") || "image"
       }`;
+      
+      console.log(`📝 Generated filename: ${fileName}`);
+      console.log(`🏢 Company code: ${itemData.company_code}`);
 
       imageKitResult = await ImageKitService.uploadImage(
         req.file,
@@ -224,57 +351,42 @@ const saveItem = async (req, res) => {
         });
       }
 
-      console.log("✅ Image uploaded successfully:", imageKitResult.data.url);
+      console.log("✅ Image uploaded: URL", imageKitResult.data.url);
+      console.log(`🆔 File ID: ${imageKitResult.data.fileId}`);
+      console.log(`📂 File Path: ${imageKitResult.data.filePath}`);
 
       // Add ImageKit URL to item data
       itemData.imgURL = imageKitResult.data.url;
       itemData.imageKitFileId = imageKitResult.data.fileId;
       itemData.imageKitFilePath = imageKitResult.data.filePath;
+    } else {
+      console.log("📁 No file uploaded - skipping image processing");
     }
     // ========== END IMAGE UPLOAD ==========
 
-    // ✅ FIXED: Pre-check duplicates within the company (barcode and itemId) for CREATE only
+    // ✅ FIXED: Safe duplicate check for CREATE only
     if (!isUpdateIntent) {
-      const dupWhere = [];
-      if (itemData.barCode) dupWhere.push({ barCode: itemData.barCode });
-      if (itemData.itemId) dupWhere.push({ itemId: String(itemData.itemId) });
-
-      if (dupWhere.length > 0) {
-        const { Op } = require("sequelize");
-        const duplicateItem = await Item.findOne({
-          where: {
-            company_code: itemData.company_code,
-            [Op.or]: dupWhere,
+      const duplicateItem = await safeDuplicateCheck(itemData, false);
+      if (duplicateItem) {
+        console.log("❌ Duplicate item found:", duplicateItem.toJSON());
+        return res.status(409).json({
+          response: {
+            status: {
+              statusCode: 409,
+              statusMessage:
+                "Item with this barcode already exists for the company",
+            },
+            data: null,
           },
         });
-
-        // ✅ CORRECT: Return error ONLY if duplicate IS found
-        if (duplicateItem) {
-          console.log("❌ Duplicate item found:", duplicateItem.toJSON());
-          return res.status(409).json({
-            response: {
-              status: {
-                statusCode: 409,
-                statusMessage:
-                  "Item with this barcode or itemId already exists for the company",
-              },
-              data: null,
-            },
-          });
-        }
       }
     }
 
     // UPDATE flow via saveItem when _id/itemId present or action === "Updated"
     if (isUpdateIntent) {
-      const { Op } = require("sequelize");
       const lookupId = itemData._id || itemData.itemId;
-      const existing = await Item.findOne({
-        where: {
-          company_code: itemData.company_code,
-          [Op.or]: [{ _id: lookupId }, { itemId: String(lookupId) }],
-        },
-      });
+      const existing = await safeFindItem(lookupId, itemData.company_code);
+
       if (!existing) {
         return res.status(404).json({
           response: {
@@ -287,34 +399,19 @@ const saveItem = async (req, res) => {
         });
       }
 
-      // Duplicate checks if changing identifiers
-      const updateDupWhere = [];
-      if (itemData.barCode && itemData.barCode !== existing.barCode)
-        updateDupWhere.push({ barCode: itemData.barCode });
-      if (
-        itemData.itemId &&
-        String(itemData.itemId) !== String(existing.itemId)
-      )
-        updateDupWhere.push({ itemId: String(itemData.itemId) });
-      if (updateDupWhere.length > 0) {
-        const conflict = await Item.findOne({
-          where: {
-            company_code: itemData.company_code,
-            [Op.or]: updateDupWhere,
+      // Safe duplicate checks if changing identifiers
+      const duplicateItem = await safeDuplicateCheck(itemData, true, existing);
+      if (duplicateItem) {
+        return res.status(409).json({
+          response: {
+            status: {
+              statusCode: 409,
+              statusMessage:
+                "Item with this barcode already exists for the company",
+            },
+            data: null,
           },
         });
-        if (conflict) {
-          return res.status(409).json({
-            response: {
-              status: {
-                statusCode: 409,
-                statusMessage:
-                  "Item with this barcode or itemId already exists for the company",
-              },
-              data: null,
-            },
-          });
-        }
       }
 
       // If updating with new image, delete old image from ImageKit
@@ -357,9 +454,9 @@ const saveItem = async (req, res) => {
     let payload = {
       ...normalized,
       _id: itemData._id || generateUniqueId(),
-      itemId:
-        itemData.itemId || Math.floor(1000 + Math.random() * 9000).toString(),
+      // Don't include itemId since column doesn't exist
     };
+
     while (attempt < 3) {
       try {
         newItem = await Item.create(payload);
@@ -424,7 +521,7 @@ const saveItem = async (req, res) => {
     const isInvalidText = error && error.original?.code === "22P02"; // invalid_text_representation
     const isNotNullViolation = error && error.original?.code === "23502";
     const message = isUniqueViolation
-      ? "Item with this barcode or itemId already exists for the company"
+      ? "Item with this barcode already exists for the company"
       : isInvalidText
       ? "Invalid value for numeric/date field"
       : isNotNullViolation
@@ -513,12 +610,7 @@ const getItem = async (req, res) => {
     const item = await Item.findOne({
       where: {
         ...(company_code ? { company_code } : {}),
-        [require("sequelize").Op.or]: [
-          { id: id },
-          { itemId: id },
-          { _id: id },
-          { barCode: id },
-        ],
+        [Op.or]: [{ id: id }, { _id: id }, { barCode: id }],
       },
     });
 
@@ -561,33 +653,78 @@ const getItem = async (req, res) => {
 const updateItem = async (req, res) => {
   try {
     console.log("=== UPDATE ITEM ===");
-    console.log(
-      "Uploaded file:",
-      req.file ? `Yes - ${req.file.originalname}` : "No"
-    );
+    console.log("Content-Type:", req.get('Content-Type'));
+    console.log("Request body:", req.body);
+    console.log("Request fields:", req.body ? Object.keys(req.body) : 'No body');
+    
+    // 📁 Detailed file logging
+    if (req.file) {
+      console.log(`📁 File received: ${req.file.originalname}, size: ${req.file.size} bytes, type: ${req.file.mimetype}`);
+      console.log(`📁 File buffer length: ${req.file.buffer ? req.file.buffer.length : 'No buffer'}`);
+    } else {
+      console.log("📁 No file uploaded");
+    }
 
     let itemData;
     let itemId;
     let companyCode;
+    let rawData;
 
-    if (
-      req.body.request &&
-      req.body.request.data &&
-      req.body.request.data.item
-    ) {
-      itemData = req.body.request.data.item;
-      itemId =
-        req.body.request.data.item._id || req.body.request.data.item.itemId;
-      companyCode = req.body.request.data.item.company_code;
-    } else if (req.body.data && req.body.data.item) {
-      itemData = req.body.data.item;
-      itemId = req.body.data.item._id || req.body.data.item.itemId;
-      companyCode = req.body.data.item.company_code;
+    // Handle different content types
+    const contentType = req.get('Content-Type') || '';
+    
+    if (contentType.includes('multipart/form-data')) {
+      console.log("📋 Processing multipart/form-data request");
+      console.log("📋 Form fields available:", Object.keys(req.body));
+      
+      // Extract JSON from form fields
+      if (req.body.data) {
+        console.log("📋 Found 'data' field in form data");
+        try {
+          rawData = JSON.parse(req.body.data);
+          console.log("📋 Successfully parsed JSON from form field");
+        } catch (parseError) {
+          console.error("❌ Failed to parse JSON from form field:", parseError.message);
+          return res.status(400).json({
+            response: {
+              status: {
+                statusCode: 400,
+                statusMessage: "Invalid JSON in form data",
+              },
+              data: null,
+            },
+          });
+        }
+      } else {
+        console.log("📋 No 'data' field found, using form fields directly");
+        rawData = req.body;
+      }
     } else {
-      itemData = req.body;
-      itemId = req.body._id || req.body.itemId;
-      companyCode = req.body.company_code;
+      console.log("📋 Processing JSON request");
+      rawData = req.body;
     }
+
+    // Handle request format from parsed data
+    if (rawData.request && rawData.request.data && rawData.request.data.item) {
+      itemData = rawData.request.data.item;
+      itemId = rawData.request.data.item._id;
+      companyCode = rawData.request.data.item.company_code;
+      console.log("📋 Using request.data format");
+    } else if (rawData.data && rawData.data.item) {
+      itemData = rawData.data.item;
+      itemId = rawData.data.item._id;
+      companyCode = rawData.data.item.company_code;
+      console.log("📋 Using data format");
+    } else {
+      itemData = rawData;
+      itemId = rawData._id;
+      companyCode = rawData.company_code;
+      console.log("📋 Using direct format");
+    }
+
+    console.log("📋 Parsed item data:", itemData);
+    console.log("📋 Item ID:", itemId);
+    console.log("📋 Company code:", companyCode);
 
     if (!itemId) {
       return res.status(400).json({
@@ -601,13 +738,7 @@ const updateItem = async (req, res) => {
       });
     }
 
-    const item = await Item.findOne({
-      where: {
-        ...(companyCode ? { company_code: companyCode } : {}),
-        [require("sequelize").Op.or]: [{ _id: itemId }, { itemId: itemId }],
-      },
-    });
-
+    const item = await safeFindItem(itemId, companyCode);
     if (!item) {
       return res.status(404).json({
         response: {
@@ -622,11 +753,17 @@ const updateItem = async (req, res) => {
 
     // ========== IMAGE UPLOAD TO IMAGEKIT ==========
     if (req.file) {
-      console.log("🖼️ Uploading new image to ImageKit...");
+      console.log("🔄 Uploading to ImageKit...");
+      console.log(`📁 Processing file: ${req.file.originalname}`);
+      console.log(`📊 File size: ${req.file.size} bytes`);
+      console.log(`🏷️ File type: ${req.file.mimetype}`);
 
       const fileName = `item_${Date.now()}_${
         itemData.name?.replace(/[^a-zA-Z0-9]/g, "_") || "image"
       }`;
+      
+      console.log(`📝 Generated filename: ${fileName}`);
+      console.log(`🏢 Company code: ${companyCode}`);
 
       const imageKitResult = await ImageKitService.uploadImage(
         req.file,
@@ -647,7 +784,9 @@ const updateItem = async (req, res) => {
         });
       }
 
-      console.log("✅ New image uploaded successfully");
+      console.log("✅ Image uploaded: URL", imageKitResult.data.url);
+      console.log(`🆔 File ID: ${imageKitResult.data.fileId}`);
+      console.log(`📂 File Path: ${imageKitResult.data.filePath}`);
 
       // Add ImageKit data to update
       itemData.imgURL = imageKitResult.data.url;
@@ -656,13 +795,18 @@ const updateItem = async (req, res) => {
 
       // Delete old image from ImageKit if exists
       if (item.imageKitFileId) {
+        console.log(`🗑️ Deleting old image: ${item.imageKitFileId}`);
         try {
           await ImageKitService.deleteImage(item.imageKitFileId);
-          console.log("🗑️ Deleted old image from ImageKit");
+          console.log("✅ Old image deleted from ImageKit");
         } catch (deleteError) {
-          console.error("Failed to delete old image:", deleteError);
+          console.error("❌ Failed to delete old image:", deleteError);
         }
+      } else {
+        console.log("📁 No old image to delete");
       }
+    } else {
+      console.log("📁 No file uploaded - skipping image processing");
     }
     // ========== END IMAGE UPLOAD ==========
 
@@ -862,15 +1006,15 @@ const deleteItem = async (req, res) => {
         req.body.request.data.item
       ) {
         const wrapped = req.body.request.data.item;
-        itemId = wrapped._id || wrapped.itemId || wrapped.barCode || wrapped.id;
+        itemId = wrapped._id || wrapped.barCode || wrapped.id;
         companyCode = wrapped.company_code || companyCode;
       } else if (req.body && req.body.data && req.body.data.item) {
         const wrapped = req.body.data.item;
-        itemId = wrapped._id || wrapped.itemId || wrapped.barCode || wrapped.id;
+        itemId = wrapped._id || wrapped.barCode || wrapped.id;
         companyCode = wrapped.company_code || companyCode;
       } else if (req.body) {
         const wrapped = req.body;
-        itemId = wrapped._id || wrapped.itemId || wrapped.barCode || wrapped.id;
+        itemId = wrapped._id || wrapped.barCode || wrapped.id;
         companyCode = wrapped.company_code || companyCode;
       }
     }
@@ -888,12 +1032,7 @@ const deleteItem = async (req, res) => {
     }
 
     const where = {
-      [require("sequelize").Op.or]: [
-        { _id: itemId },
-        { itemId: itemId },
-        { barCode: itemId },
-        { id: itemId },
-      ],
+      [Op.or]: [{ _id: itemId }, { barCode: itemId }, { id: itemId }],
       ...(companyCode ? { company_code: companyCode } : {}),
     };
 
@@ -913,12 +1052,15 @@ const deleteItem = async (req, res) => {
     // ========== DELETE IMAGE FROM IMAGEKIT ==========
     // Delete image from ImageKit if exists
     if (item.imageKitFileId) {
+      console.log(`🗑️ Deleting image from ImageKit: ${item.imageKitFileId}`);
       try {
         await ImageKitService.deleteImage(item.imageKitFileId);
-        console.log("🗑️ Deleted image from ImageKit");
+        console.log("✅ Image deleted from ImageKit successfully");
       } catch (deleteError) {
-        console.error("Failed to delete image from ImageKit:", deleteError);
+        console.error("❌ Failed to delete image from ImageKit:", deleteError);
       }
+    } else {
+      console.log("📁 No image to delete from ImageKit");
     }
     // ========== END IMAGE DELETION ==========
 

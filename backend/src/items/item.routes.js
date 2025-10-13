@@ -1,4 +1,5 @@
 const express = require("express");
+const multer = require("multer");
 const {
   saveItem,
   getAllItems,
@@ -10,16 +11,22 @@ const {
 
 const router = express.Router();
 
-// Item routes - CORRECT ORDER
-// Specific routes must come BEFORE dynamic routes
-router.post("/save", saveItem);
+// Configure multer for file uploads
+const upload = multer({
+  storage: multer.memoryStorage(), // Use memory storage for ImageKit
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB limit
+  },
+});
+
+// 🔥 FIXED: Add multer middleware to the save route
+router.post("/save", upload.single("file"), saveItem); // ← ADD THIS
 router.get("/", getAllItems);
-router.get("/inventory", getInventory); // GET inventory - SPECIFIC ROUTE
-router.post("/inventory", getInventory); // POST inventory - SPECIFIC ROUTE
+router.get("/inventory", getInventory);
+router.post("/inventory", getInventory);
 router.put("/update", updateItem);
 router.post("/delete", deleteItem);
-// DYNAMIC ROUTES MUST COME LAST
-router.get("/:id", getItem); // Dynamic route - COMES LAST
-router.delete("/:id", deleteItem); // Dynamic route - COMES LAST
+router.get("/:id", getItem);
+router.delete("/:id", deleteItem);
 
 module.exports = router;

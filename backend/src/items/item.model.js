@@ -11,143 +11,179 @@ const Item = sequelize.define(
     },
     itemId: {
       type: DataTypes.STRING,
-      // uniqueness is enforced per company via composite index below
+      field: "itemId",
     },
     _id: {
       type: DataTypes.STRING,
       unique: true,
+      field: "_id",
     },
     name: {
       type: DataTypes.STRING,
       allowNull: false,
+      field: "name",
     },
     description: {
       type: DataTypes.TEXT,
+      field: "description",
     },
     price: {
       type: DataTypes.DECIMAL(10, 2),
       allowNull: false,
+      field: "price",
     },
     costPrice: {
       type: DataTypes.DECIMAL(10, 2),
+      field: "costPrice",
     },
     companyPrice: {
       type: DataTypes.DECIMAL(10, 2),
+      field: "companyPrice",
     },
     whole_sale_price: {
       type: DataTypes.DECIMAL(10, 2),
+      field: "whole_sale_price",
     },
     discount: {
       type: DataTypes.DECIMAL(10, 2),
+      field: "discount",
     },
     quantity: {
       type: DataTypes.INTEGER,
       defaultValue: 0,
+      field: "quantity",
     },
     minquantity: {
       type: DataTypes.INTEGER,
       defaultValue: 0,
+      field: "minquantity",
     },
     vendor: {
       type: DataTypes.STRING,
+      field: "vendor",
     },
     unit: {
       type: DataTypes.STRING,
+      field: "unit",
     },
     barCode: {
       type: DataTypes.STRING,
-      // Allow null values to avoid duplicate empty string issues
       allowNull: true,
       defaultValue: null,
+      field: "barCode",
     },
     itemCode: {
       type: DataTypes.STRING,
+      field: "itemCode",
     },
     category: {
       type: DataTypes.STRING,
+      field: "category",
     },
     status: {
       type: DataTypes.STRING,
       defaultValue: "Active",
+      field: "status",
     },
     expiryDate: {
       type: DataTypes.DATE,
       allowNull: true,
+      field: "expiryDate",
     },
     imgURL: {
       type: DataTypes.STRING,
+      field: "imgURL",
     },
-    // ========== IMAGEKIT FIELDS ADDED ==========
+    // ========== IMAGEKIT FIELDS ==========
     imageKitFileId: {
       type: DataTypes.STRING,
       allowNull: true,
+      field: "imagekitfileid",
     },
     imageKitFilePath: {
       type: DataTypes.STRING,
       allowNull: true,
+      field: "imagekitfilepath",
     },
     // ========== END IMAGEKIT FIELDS ==========
     company_code: {
       type: DataTypes.STRING,
       allowNull: false,
+      field: "company_code",
     },
     shop_code: {
       type: DataTypes.STRING,
+      field: "shop_code",
     },
     rack_code: {
       type: DataTypes.STRING,
+      field: "rack_code",
     },
     sub_rack_code: {
       type: DataTypes.STRING,
+      field: "sub_rack_code",
     },
     weight: {
       type: DataTypes.DECIMAL(10, 2),
+      field: "weight",
     },
     weightType: {
       type: DataTypes.BOOLEAN,
       defaultValue: false,
+      field: "weightType",
     },
     boxes: {
       type: DataTypes.INTEGER,
       defaultValue: 0,
+      field: "boxes",
     },
     packing: {
       type: DataTypes.INTEGER,
       defaultValue: 0,
+      field: "packing",
     },
     totalBoxes: {
       type: DataTypes.INTEGER,
       defaultValue: 0,
+      field: "totalBoxes",
     },
     box: {
       type: DataTypes.BOOLEAN,
       defaultValue: false,
+      field: "box",
     },
     piecesPerBox: {
       type: DataTypes.INTEGER,
       defaultValue: 0,
+      field: "piecesPerBox",
     },
     pricePerPiece: {
       type: DataTypes.DECIMAL(10, 2),
+      field: "pricePerPiece",
     },
     saleLabel: {
       type: DataTypes.STRING,
+      field: "saleLabel",
     },
     batchNumber: {
       type: DataTypes.JSON,
       defaultValue: [],
+      field: "batchNumber",
     },
     imeiNumbers: {
       type: DataTypes.JSON,
       defaultValue: [],
+      field: "imeiNumbers",
     },
     created_at: {
       type: DataTypes.BIGINT,
       defaultValue: () => Math.floor(Date.now() / 1000),
+      field: "created_at",
     },
     modified_at: {
       type: DataTypes.BIGINT,
       defaultValue: () => Math.floor(Date.now() / 1000),
+      field: "modified_at",
     },
   },
   {
@@ -160,66 +196,58 @@ const Item = sequelize.define(
         name: "uniq_company_barcode",
         where: {
           barCode: {
-            [sequelize.Sequelize.Op.ne]: null, // Only enforce uniqueness for non-null barcodes
+            [sequelize.Sequelize.Op.ne]: null,
           },
         },
-      },
-      {
-        unique: true,
-        fields: ["company_code", "itemId"],
-        name: "uniq_company_itemid",
       },
     ],
     hooks: {
       beforeCreate: async (item) => {
-        // Generate unique itemId if not provided
-        if (!item.itemId) {
-          item.itemId = Math.floor(1000 + Math.random() * 9000).toString();
-        }
-        // Ensure globally unique _id (regenerate when duplicate)
         const crypto = require("crypto");
+
+        // ⚠️ REMOVED: itemId generation logic
+
+        // Ensure globally unique _id
         if (!item._id) {
           item._id = crypto.randomBytes(16).toString("hex");
         }
+
         let attempts = 0;
-        // Use the model itself inside hook to check uniqueness
         while (attempts < 5) {
-          const exists = await Item.count({ where: { _id: item._id } });
-          if (exists === 0) break;
-          item._id = crypto.randomBytes(16).toString("hex");
-          attempts++;
+          try {
+            const exists = await Item.count({ where: { _id: item._id } });
+            if (exists === 0) break;
+            item._id = crypto.randomBytes(16).toString("hex");
+            attempts++;
+          } catch (error) {
+            // If there's an error, just break and use the generated _id
+            break;
+          }
         }
 
-        // Convert empty barcode to null to avoid unique constraint issues
-        if (item.barCode === "" || item.barCode === '""') {
-          item.barCode = null;
-        }
+        // Data cleaning and normalization
+        item.barCode = normalizeEmptyToNull(item.barCode);
+        item.expiryDate = normalizeEmptyToNull(item.expiryDate);
+        item.weightType = normalizeToBoolean(item.weightType);
+        item.box = normalizeToBoolean(item.box);
 
-        // Convert empty expiryDate to null
-        if (item.expiryDate === "" || item.expiryDate === "Invalid date") {
-          item.expiryDate = null;
-        }
+        // Normalize numeric fields
+        item.weight = normalizeToNumber(item.weight);
+        item.discount = normalizeToNumber(item.discount);
+        item.quantity = normalizeToInteger(item.quantity);
+        item.minquantity = normalizeToInteger(item.minquantity);
+        item.boxes = normalizeToInteger(item.boxes);
+        item.packing = normalizeToInteger(item.packing);
+        item.totalBoxes = normalizeToInteger(item.totalBoxes);
+        item.piecesPerBox = normalizeToInteger(item.piecesPerBox);
+        item.pricePerPiece = normalizeToNumber(item.pricePerPiece);
 
-        // Convert weightType to proper boolean
-        if (typeof item.weightType === "string") {
-          item.weightType =
-            item.weightType === "true" ||
-            item.weightType === "1" ||
-            item.weightType === "1.00";
-        } else if (typeof item.weightType === "number") {
-          item.weightType = Boolean(item.weightType);
-        }
-
-        // Convert box to proper boolean
-        if (typeof item.box === "string") {
-          item.box = item.box === "true" || item.box === "1";
-        } else if (typeof item.box === "number") {
-          item.box = Boolean(item.box);
-        }
-
-        // Handle ImageKit fields - ensure they are properly set
-        if (item.imgURL && !item.imageKitFileId) {
-          // If imgURL is provided but no ImageKit data, clear the ImageKit fields
+        // Handle ImageKit fields consistency
+        if (
+          item.imgURL &&
+          !item.imageKitFileId &&
+          !item.imgURL.includes("imagekit.io")
+        ) {
           item.imageKitFileId = null;
           item.imageKitFilePath = null;
         }
@@ -228,46 +256,24 @@ const Item = sequelize.define(
         item.created_at = timestamp;
         item.modified_at = timestamp;
       },
+
       beforeUpdate: async (item) => {
-        // Convert empty barcode to null to avoid unique constraint issues
-        if (item.barCode === "" || item.barCode === '""') {
-          item.barCode = null;
-        }
+        // Data cleaning and normalization
+        item.barCode = normalizeEmptyToNull(item.barCode);
+        item.expiryDate = normalizeEmptyToNull(item.expiryDate);
+        item.weightType = normalizeToBoolean(item.weightType);
+        item.box = normalizeToBoolean(item.box);
 
-        // Convert empty expiryDate to null
-        if (item.expiryDate === "" || item.expiryDate === "Invalid date") {
-          item.expiryDate = null;
-        }
-
-        // Convert weightType to proper boolean - FIXED
-        if (typeof item.weightType === "string") {
-          item.weightType =
-            item.weightType === "true" ||
-            item.weightType === "1" ||
-            item.weightType === "1.00";
-        } else if (typeof item.weightType === "number") {
-          item.weightType = Boolean(item.weightType);
-        }
-
-        // Convert box to proper boolean
-        if (typeof item.box === "string") {
-          item.box = item.box === "true" || item.box === "1";
-        } else if (typeof item.box === "number") {
-          item.box = Boolean(item.box);
-        }
-
-        // Ensure numeric fields are properly converted
-        if (item.weight && typeof item.weight === "string") {
-          item.weight = parseFloat(item.weight) || 0;
-        }
-
-        if (item.discount && typeof item.discount === "string") {
-          item.discount = parseFloat(item.discount) || 0;
-        }
-
-        if (item.quantity && typeof item.quantity === "string") {
-          item.quantity = parseInt(item.quantity) || 0;
-        }
+        // Normalize numeric fields
+        item.weight = normalizeToNumber(item.weight);
+        item.discount = normalizeToNumber(item.discount);
+        item.quantity = normalizeToInteger(item.quantity);
+        item.minquantity = normalizeToInteger(item.minquantity);
+        item.boxes = normalizeToInteger(item.boxes);
+        item.packing = normalizeToInteger(item.packing);
+        item.totalBoxes = normalizeToInteger(item.totalBoxes);
+        item.piecesPerBox = normalizeToInteger(item.piecesPerBox);
+        item.pricePerPiece = normalizeToNumber(item.pricePerPiece);
 
         // Handle ImageKit fields consistency
         if (
@@ -275,32 +281,19 @@ const Item = sequelize.define(
           !item.imageKitFileId &&
           !item.imgURL.includes("imagekit.io")
         ) {
-          // If imgURL is changed to non-ImageKit URL, clear ImageKit fields
           item.imageKitFileId = null;
           item.imageKitFilePath = null;
         }
 
         item.modified_at = Math.floor(Date.now() / 1000);
       },
+
       beforeSave: async (item) => {
-        // Additional safety check for data types
-        if (item.weightType !== undefined && item.weightType !== null) {
-          if (typeof item.weightType === "string") {
-            item.weightType =
-              item.weightType === "true" ||
-              item.weightType === "1" ||
-              item.weightType === "1.00";
-          }
-        }
+        // Additional safety checks
+        item.weightType = normalizeToBoolean(item.weightType);
+        item.box = normalizeToBoolean(item.box);
 
-        // Ensure box is proper boolean
-        if (item.box !== undefined && item.box !== null) {
-          if (typeof item.box === "string") {
-            item.box = item.box === "true" || item.box === "1";
-          }
-        }
-
-        // Ensure ImageKit fields consistency
+        // Final ImageKit consistency check
         if (
           item.imgURL &&
           !item.imageKitFileId &&
@@ -313,5 +306,51 @@ const Item = sequelize.define(
     },
   }
 );
+
+// Helper functions for data normalization
+function normalizeEmptyToNull(value) {
+  if (
+    value === "" ||
+    value === '""' ||
+    value === "null" ||
+    value === "undefined"
+  ) {
+    return null;
+  }
+  return value;
+}
+
+function normalizeToBoolean(value) {
+  if (value === undefined || value === null) return false;
+
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    return value === "true" || value === "1" || value === "1.00";
+  }
+  if (typeof value === "number") {
+    return Boolean(value);
+  }
+  return false;
+}
+
+function normalizeToNumber(value) {
+  if (value === undefined || value === null || value === "") return 0;
+  if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const parsed = parseFloat(value);
+    return isNaN(parsed) ? 0 : parsed;
+  }
+  return 0;
+}
+
+function normalizeToInteger(value) {
+  if (value === undefined || value === null || value === "") return 0;
+  if (typeof value === "number") return Math.floor(value);
+  if (typeof value === "string") {
+    const parsed = parseInt(value);
+    return isNaN(parsed) ? 0 : parsed;
+  }
+  return 0;
+}
 
 module.exports = Item;
