@@ -77,6 +77,16 @@ const Item = sequelize.define(
     imgURL: {
       type: DataTypes.STRING,
     },
+    // ========== IMAGEKIT FIELDS ADDED ==========
+    imageKitFileId: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    imageKitFilePath: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    // ========== END IMAGEKIT FIELDS ==========
     company_code: {
       type: DataTypes.STRING,
       allowNull: false,
@@ -207,6 +217,13 @@ const Item = sequelize.define(
           item.box = Boolean(item.box);
         }
 
+        // Handle ImageKit fields - ensure they are properly set
+        if (item.imgURL && !item.imageKitFileId) {
+          // If imgURL is provided but no ImageKit data, clear the ImageKit fields
+          item.imageKitFileId = null;
+          item.imageKitFilePath = null;
+        }
+
         const timestamp = Math.floor(Date.now() / 1000);
         item.created_at = timestamp;
         item.modified_at = timestamp;
@@ -252,6 +269,17 @@ const Item = sequelize.define(
           item.quantity = parseInt(item.quantity) || 0;
         }
 
+        // Handle ImageKit fields consistency
+        if (
+          item.imgURL &&
+          !item.imageKitFileId &&
+          !item.imgURL.includes("imagekit.io")
+        ) {
+          // If imgURL is changed to non-ImageKit URL, clear ImageKit fields
+          item.imageKitFileId = null;
+          item.imageKitFilePath = null;
+        }
+
         item.modified_at = Math.floor(Date.now() / 1000);
       },
       beforeSave: async (item) => {
@@ -270,6 +298,16 @@ const Item = sequelize.define(
           if (typeof item.box === "string") {
             item.box = item.box === "true" || item.box === "1";
           }
+        }
+
+        // Ensure ImageKit fields consistency
+        if (
+          item.imgURL &&
+          !item.imageKitFileId &&
+          !item.imgURL.includes("imagekit.io")
+        ) {
+          item.imageKitFileId = null;
+          item.imageKitFilePath = null;
         }
       },
     },

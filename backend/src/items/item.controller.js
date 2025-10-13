@@ -1,4 +1,6 @@
 const Item = require("./item.model");
+const ImageKitService = require("../services/imageKitService");
+const multer = require("multer");
 
 // Generate unique ID
 const generateUniqueId = () => {
@@ -140,6 +142,10 @@ const saveItem = async (req, res) => {
   try {
     console.log("=== SAVE ITEM ===");
     console.log("Request body:", req.body);
+    console.log(
+      "Uploaded file:",
+      req.file ? `Yes - ${req.file.originalname}` : "No"
+    );
 
     let itemData;
     let action;
@@ -189,6 +195,43 @@ const saveItem = async (req, res) => {
         },
       });
     }
+
+    // ========== IMAGE UPLOAD TO IMAGEKIT ==========
+    let imageKitResult = null;
+    if (req.file) {
+      console.log("🖼️ Uploading image to ImageKit...");
+
+      const fileName = `item_${Date.now()}_${
+        itemData.name?.replace(/[^a-zA-Z0-9]/g, "_") || "image"
+      }`;
+
+      imageKitResult = await ImageKitService.uploadImage(
+        req.file,
+        itemData.company_code,
+        fileName
+      );
+
+      if (!imageKitResult.success) {
+        console.error("❌ Image upload failed:", imageKitResult.error);
+        return res.status(500).json({
+          response: {
+            status: {
+              statusCode: 500,
+              statusMessage: "Image upload failed",
+            },
+            data: null,
+          },
+        });
+      }
+
+      console.log("✅ Image uploaded successfully:", imageKitResult.data.url);
+
+      // Add ImageKit URL to item data
+      itemData.imgURL = imageKitResult.data.url;
+      itemData.imageKitFileId = imageKitResult.data.fileId;
+      itemData.imageKitFilePath = imageKitResult.data.filePath;
+    }
+    // ========== END IMAGE UPLOAD ==========
 
     // ✅ FIXED: Pre-check duplicates within the company (barcode and itemId) for CREATE only
     if (!isUpdateIntent) {
@@ -274,6 +317,17 @@ const saveItem = async (req, res) => {
         }
       }
 
+      // If updating with new image, delete old image from ImageKit
+      if (req.file && existing.imageKitFileId) {
+        try {
+          await ImageKitService.deleteImage(existing.imageKitFileId);
+          console.log("🗑️ Deleted old image from ImageKit");
+        } catch (deleteError) {
+          console.error("Failed to delete old image:", deleteError);
+          // Continue with update even if delete fails
+        }
+      }
+
       const normalizedUpdate = normalizeItemData(itemData);
       await existing.update(normalizedUpdate);
 
@@ -347,6 +401,22 @@ const saveItem = async (req, res) => {
     });
   } catch (error) {
     console.error("SAVE ITEM ERROR:", error);
+
+    // Handle multer file size limit error
+    if (error instanceof multer.MulterError) {
+      if (error.code === "LIMIT_FILE_SIZE") {
+        return res.status(400).json({
+          response: {
+            status: {
+              statusCode: 400,
+              statusMessage: "Image file too large. Maximum size is 2MB.",
+            },
+            data: null,
+          },
+        });
+      }
+    }
+
     const isUniqueViolation =
       error &&
       (error.name === "SequelizeUniqueConstraintError" ||
@@ -491,6 +561,10 @@ const getItem = async (req, res) => {
 const updateItem = async (req, res) => {
   try {
     console.log("=== UPDATE ITEM ===");
+    console.log(
+      "Uploaded file:",
+      req.file ? `Yes - ${req.file.originalname}` : "No"
+    );
 
     let itemData;
     let itemId;
@@ -546,6 +620,52 @@ const updateItem = async (req, res) => {
       });
     }
 
+    // ========== IMAGE UPLOAD TO IMAGEKIT ==========
+    if (req.file) {
+      console.log("🖼️ Uploading new image to ImageKit...");
+
+      const fileName = `item_${Date.now()}_${
+        itemData.name?.replace(/[^a-zA-Z0-9]/g, "_") || "image"
+      }`;
+
+      const imageKitResult = await ImageKitService.uploadImage(
+        req.file,
+        companyCode,
+        fileName
+      );
+
+      if (!imageKitResult.success) {
+        console.error("❌ Image upload failed:", imageKitResult.error);
+        return res.status(500).json({
+          response: {
+            status: {
+              statusCode: 500,
+              statusMessage: "Image upload failed",
+            },
+            data: null,
+          },
+        });
+      }
+
+      console.log("✅ New image uploaded successfully");
+
+      // Add ImageKit data to update
+      itemData.imgURL = imageKitResult.data.url;
+      itemData.imageKitFileId = imageKitResult.data.fileId;
+      itemData.imageKitFilePath = imageKitResult.data.filePath;
+
+      // Delete old image from ImageKit if exists
+      if (item.imageKitFileId) {
+        try {
+          await ImageKitService.deleteImage(item.imageKitFileId);
+          console.log("🗑️ Deleted old image from ImageKit");
+        } catch (deleteError) {
+          console.error("Failed to delete old image:", deleteError);
+        }
+      }
+    }
+    // ========== END IMAGE UPLOAD ==========
+
     // Normalize and update
     const normalized = normalizeItemData(itemData);
     await item.update(normalized);
@@ -563,6 +683,22 @@ const updateItem = async (req, res) => {
     });
   } catch (error) {
     console.error("UPDATE ITEM ERROR:", error);
+
+    // Handle multer file size limit error
+    if (error instanceof multer.MulterError) {
+      if (error.code === "LIMIT_FILE_SIZE") {
+        return res.status(400).json({
+          response: {
+            status: {
+              statusCode: 400,
+              statusMessage: "Image file too large. Maximum size is 2MB.",
+            },
+            data: null,
+          },
+        });
+      }
+    }
+
     res.status(500).json({
       response: {
         status: {
@@ -774,6 +910,18 @@ const deleteItem = async (req, res) => {
       });
     }
 
+    // ========== DELETE IMAGE FROM IMAGEKIT ==========
+    // Delete image from ImageKit if exists
+    if (item.imageKitFileId) {
+      try {
+        await ImageKitService.deleteImage(item.imageKitFileId);
+        console.log("🗑️ Deleted image from ImageKit");
+      } catch (deleteError) {
+        console.error("Failed to delete image from ImageKit:", deleteError);
+      }
+    }
+    // ========== END IMAGE DELETION ==========
+
     await item.destroy();
 
     res.json({
@@ -807,4 +955,3 @@ module.exports = {
   deleteItem,
   getInventory,
 };
-
