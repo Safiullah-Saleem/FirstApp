@@ -19,7 +19,7 @@ const upload = multer({
   },
 });
 
-// 🔥 FIXED: Add multer middleware to the save route
+// FIXED: Add multer middleware to the save route
 router.post("/save", upload.single("file"), saveItem); // ← ADD THIS
 router.get("/", getAllItems);
 router.get("/inventory", getInventory);
