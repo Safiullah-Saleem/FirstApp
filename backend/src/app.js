@@ -1,7 +1,7 @@
 const express = require("express");
 const bodyParser = require("body-parser");
 const cors = require("cors");
-const { testConnection } = require("./config/database");
+const { testConnection, getConnectionHealth } = require("./config/database");
 
 // USE ORIGINAL PATHS THAT WORK
 const userRoutes = require("./user/user.routes");
@@ -79,12 +79,31 @@ app.get("/", (req, res) => {
   });
 });
 
-// Health check for Railway
-app.get("/health", (req, res) => {
-  res.status(200).json({
-    status: "healthy",
-    timestamp: new Date().toISOString(),
-  });
+// Enhanced health check for Railway with database monitoring
+app.get("/health", async (req, res) => {
+  try {
+    const dbHealth = await getConnectionHealth();
+    
+    const healthStatus = {
+      status: dbHealth.status === 'healthy' ? 'healthy' : 'unhealthy',
+      timestamp: new Date().toISOString(),
+      database: dbHealth,
+      uptime: process.uptime(),
+      memory: process.memoryUsage(),
+      environment: process.env.NODE_ENV || 'development'
+    };
+    
+    const statusCode = healthStatus.status === 'healthy' ? 200 : 503;
+    res.status(statusCode).json(healthStatus);
+    
+  } catch (error) {
+    res.status(503).json({
+      status: 'unhealthy',
+      timestamp: new Date().toISOString(),
+      error: error.message,
+      uptime: process.uptime()
+    });
+  }
 });
 
 // Error handling
