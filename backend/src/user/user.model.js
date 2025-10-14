@@ -175,17 +175,24 @@ const User = sequelize.define(
             user.password = await bcrypt.hash(user.password, 12);
           }
 
-          // Generate unique company code without circular dependency
+          // Generate unique company code - FIXED: Remove circular dependency
           let isUnique = false;
           let code;
           let attempts = 0;
 
           while (!isUnique && attempts < 10) {
             code = Math.floor(1000 + Math.random() * 9000).toString();
-            const existingUser = await sequelize.models.User.findOne({
-              where: { company_code: code },
-            });
-            if (!existingUser) {
+
+            // FIX: Use direct query instead of model method to avoid circular dependency
+            const [results] = await sequelize.query(
+              "SELECT COUNT(*) as count FROM users WHERE company_code = ?",
+              {
+                replacements: [code],
+                type: sequelize.QueryTypes.SELECT,
+              }
+            );
+
+            if (results.count === 0) {
               isUnique = true;
             }
             attempts++;
