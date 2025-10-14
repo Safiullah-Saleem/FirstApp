@@ -1,6 +1,6 @@
 const { Op } = require("sequelize");
 const Ledger = require("./ledger.model");
-const Transaction = require("./transaction.model");
+const Transaction = require("../transaction/transaction.model");
 const { ok, badRequest, serverError } = require("../utils/response");
 
 function validateCompanyAccess(company_code, user_company) {
