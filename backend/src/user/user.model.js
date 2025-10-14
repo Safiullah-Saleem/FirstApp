@@ -14,6 +14,7 @@ const User = sequelize.define(
     name: {
       type: DataTypes.STRING,
       allowNull: false,
+      field: "name", // Explicit field mapping
     },
     email: {
       type: DataTypes.STRING,
@@ -22,103 +23,127 @@ const User = sequelize.define(
       validate: {
         isEmail: true,
       },
+      field: "email",
     },
     phone: {
       type: DataTypes.STRING,
       allowNull: false,
+      field: "phone",
     },
     password: {
       type: DataTypes.STRING,
       allowNull: false,
+      field: "password",
     },
     address: {
       type: DataTypes.TEXT,
       allowNull: false,
+      field: "address",
     },
     // Company name field
     company_name: {
       type: DataTypes.STRING,
       allowNull: false,
+      field: "company_name",
     },
     company_code: {
       type: DataTypes.STRING,
       unique: true,
+      field: "company_code",
     },
     isTrial: {
       type: DataTypes.BOOLEAN,
       defaultValue: true,
+      field: "is_trial", // FIXED: Changed to match database column name
     },
     isPaid: {
       type: DataTypes.BOOLEAN,
       defaultValue: false,
+      field: "is_paid", // FIXED: Changed to match database column name
     },
 
     // COMPANY SETTINGS FIELDS
     terms_conditions: {
       type: DataTypes.TEXT,
       defaultValue: "",
+      field: "terms_conditions",
     },
     gst_number: {
       type: DataTypes.STRING,
       defaultValue: "",
+      field: "gst_number",
     },
     company_logo: {
       type: DataTypes.STRING,
       defaultValue: "",
+      field: "company_logo",
     },
     bill_stamp: {
       type: DataTypes.JSON,
       defaultValue: {},
+      field: "bill_stamp",
     },
     stock_value: {
       type: DataTypes.STRING,
       defaultValue: "no",
+      field: "stock_value",
     },
     ledger_regions: {
       type: DataTypes.JSON,
       defaultValue: [],
+      field: "ledger_regions",
     },
     access: {
       type: DataTypes.JSON,
       defaultValue: [],
+      field: "access",
     },
     features_access: {
       type: DataTypes.JSON,
       defaultValue: [],
+      field: "features_access",
     },
 
     // USER PROFILE FIELDS
     first_name: {
       type: DataTypes.STRING,
       allowNull: true,
+      field: "first_name",
     },
     last_name: {
       type: DataTypes.STRING,
       allowNull: true,
+      field: "last_name",
     },
     role: {
       type: DataTypes.ENUM("admin", "user", "manager"),
       defaultValue: "user",
+      field: "role",
     },
     is_active: {
       type: DataTypes.BOOLEAN,
       defaultValue: true,
+      field: "is_active",
     },
     email_verified: {
       type: DataTypes.BOOLEAN,
       defaultValue: false,
+      field: "email_verified",
     },
     last_login: {
       type: DataTypes.DATE,
       allowNull: true,
+      field: "last_login",
     },
     profile_image: {
       type: DataTypes.STRING,
       allowNull: true,
+      field: "profile_image",
     },
     date_of_birth: {
       type: DataTypes.DATEONLY,
       allowNull: true,
+      field: "date_of_birth",
     },
 
     // FIXED: updated_at now allows null
@@ -126,14 +151,17 @@ const User = sequelize.define(
       type: DataTypes.DATE,
       allowNull: true, // CHANGED from false to true
       defaultValue: DataTypes.NOW,
+      field: "updated_at",
     },
     created_at: {
       type: DataTypes.BIGINT,
       defaultValue: () => Math.floor(Date.now() / 1000),
+      field: "created_at",
     },
     modified_at: {
       type: DataTypes.BIGINT,
       defaultValue: () => Math.floor(Date.now() / 1000),
+      field: "modified_at",
     },
   },
   {
