@@ -8,6 +8,7 @@ const userRoutes = require("./user/user.routes");
 const employeeRoutes = require("./employees/employee.routes");
 const companyRoutes = require("./company/company.routes");
 const billingRoutes = require("./billing/billing.routes");
+const ledgerRoutes = require("./ledger/ledger.routes");
 
 console.log("🟢 Loading item routes...");
 try {
@@ -47,6 +48,7 @@ app.use("/api/employees", employeeRoutes);
 app.use("/api/company", companyRoutes);
 app.use("/api/items", itemRoutes);
 app.use("/api/billing", billingRoutes);
+app.use("/api/ledgers", ledgerRoutes);
 
 // Add a direct test route to verify items functionality
 app.get("/api/debug-items", (req, res) => {
