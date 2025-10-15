@@ -10,11 +10,9 @@ const User = sequelize.define(
       primaryKey: true,
       autoIncrement: true,
     },
-    // ADDED: Name field that was missing from model but exists in database
     name: {
       type: DataTypes.STRING,
       allowNull: false,
-      field: "name", // Explicit field mapping
     },
     email: {
       type: DataTypes.STRING,
@@ -23,145 +21,115 @@ const User = sequelize.define(
       validate: {
         isEmail: true,
       },
-      field: "email",
     },
     phone: {
       type: DataTypes.STRING,
       allowNull: false,
-      field: "phone",
     },
     password: {
       type: DataTypes.STRING,
       allowNull: false,
-      field: "password",
     },
     address: {
       type: DataTypes.TEXT,
       allowNull: false,
-      field: "address",
     },
-    // Company name field
     company_name: {
       type: DataTypes.STRING,
       allowNull: false,
-      field: "company_name",
     },
     company_code: {
       type: DataTypes.STRING,
       unique: true,
-      field: "company_code",
     },
-    isTrial: {
+    is_trial: {
+      // CHANGED: Use snake_case to match database
       type: DataTypes.BOOLEAN,
       defaultValue: true,
-      field: "is_trial", // FIXED: Changed to match database column name
+      field: "is_trial", // Keep field mapping for consistency
     },
-    isPaid: {
+    is_paid: {
+      // CHANGED: Use snake_case to match database
       type: DataTypes.BOOLEAN,
       defaultValue: false,
-      field: "is_paid", // FIXED: Changed to match database column name
+      field: "is_paid",
     },
-
-    // COMPANY SETTINGS FIELDS
     terms_conditions: {
       type: DataTypes.TEXT,
       defaultValue: "",
-      field: "terms_conditions",
     },
     gst_number: {
       type: DataTypes.STRING,
       defaultValue: "",
-      field: "gst_number",
     },
     company_logo: {
       type: DataTypes.STRING,
       defaultValue: "",
-      field: "company_logo",
     },
     bill_stamp: {
       type: DataTypes.JSON,
       defaultValue: {},
-      field: "bill_stamp",
     },
     stock_value: {
       type: DataTypes.STRING,
       defaultValue: "no",
-      field: "stock_value",
     },
     ledger_regions: {
       type: DataTypes.JSON,
       defaultValue: [],
-      field: "ledger_regions",
     },
     access: {
       type: DataTypes.JSON,
       defaultValue: [],
-      field: "access",
     },
     features_access: {
       type: DataTypes.JSON,
       defaultValue: [],
-      field: "features_access",
     },
-
-    // USER PROFILE FIELDS
     first_name: {
       type: DataTypes.STRING,
       allowNull: true,
-      field: "first_name",
     },
     last_name: {
       type: DataTypes.STRING,
       allowNull: true,
-      field: "last_name",
     },
     role: {
       type: DataTypes.ENUM("admin", "user", "manager"),
       defaultValue: "user",
-      field: "role",
     },
     is_active: {
       type: DataTypes.BOOLEAN,
       defaultValue: true,
-      field: "is_active",
     },
     email_verified: {
       type: DataTypes.BOOLEAN,
       defaultValue: false,
-      field: "email_verified",
     },
     last_login: {
       type: DataTypes.DATE,
       allowNull: true,
-      field: "last_login",
     },
     profile_image: {
       type: DataTypes.STRING,
       allowNull: true,
-      field: "profile_image",
     },
     date_of_birth: {
       type: DataTypes.DATEONLY,
       allowNull: true,
-      field: "date_of_birth",
     },
-
-    // FIXED: updated_at now allows null
     updated_at: {
       type: DataTypes.DATE,
-      allowNull: true, // CHANGED from false to true
+      allowNull: true,
       defaultValue: DataTypes.NOW,
-      field: "updated_at",
     },
     created_at: {
       type: DataTypes.BIGINT,
       defaultValue: () => Math.floor(Date.now() / 1000),
-      field: "created_at",
     },
     modified_at: {
       type: DataTypes.BIGINT,
       defaultValue: () => Math.floor(Date.now() / 1000),
-      field: "modified_at",
     },
   },
   {
@@ -175,7 +143,7 @@ const User = sequelize.define(
             user.password = await bcrypt.hash(user.password, 12);
           }
 
-          // Generate unique company code - FIXED: Remove circular dependency
+          // Generate unique company code
           let isUnique = false;
           let code;
           let attempts = 0;
@@ -183,7 +151,6 @@ const User = sequelize.define(
           while (!isUnique && attempts < 10) {
             code = Math.floor(1000 + Math.random() * 9000).toString();
 
-            // FIX: Use direct query instead of model method to avoid circular dependency
             const [results] = await sequelize.query(
               "SELECT COUNT(*) as count FROM users WHERE company_code = ?",
               {
@@ -199,7 +166,6 @@ const User = sequelize.define(
           }
 
           if (!isUnique) {
-            // Fallback: timestamp-based code
             code = Date.now().toString().slice(-4);
           }
 
@@ -211,12 +177,12 @@ const User = sequelize.define(
           user.modified_at = user.modified_at || timestamp;
           user.updated_at = user.updated_at || new Date();
 
-          // Initialize required fields with defaults
+          // Initialize required fields
           user.company_name = user.company_name || "My Company";
           user.first_name = user.first_name || "";
           user.last_name = user.last_name || "";
 
-          // AUTO-GENERATE NAME from first_name + last_name if not provided
+          // Auto-generate name
           if (!user.name && (user.first_name || user.last_name)) {
             user.name = `${user.first_name || ""} ${
               user.last_name || ""
@@ -268,7 +234,7 @@ User.prototype.correctPassword = async function (candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
-// Instance method to get user profile (without sensitive data)
+// UPDATED: Fix property names in getProfile method
 User.prototype.getProfile = function () {
   return {
     id: this.id,
@@ -277,6 +243,8 @@ User.prototype.getProfile = function () {
     phone: this.phone,
     company_name: this.company_name,
     company_code: this.company_code,
+    is_trial: this.is_trial, // CHANGED: from isTrial
+    is_paid: this.is_paid, // CHANGED: from isPaid
     first_name: this.first_name,
     last_name: this.last_name,
     role: this.role,
