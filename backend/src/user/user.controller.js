@@ -1,6 +1,6 @@
 const User = require("./user.model");
 const { generateToken, verifyPassword } = require("../utils/authUtils");
-// ab railway walo ko pade sare theek ho gya ha ustad 
+
 
 // User Registration
 const signupAdmin = async (req, res) => {
