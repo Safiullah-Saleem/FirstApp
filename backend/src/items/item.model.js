@@ -11,7 +11,7 @@ const Item = sequelize.define(
     },
     itemId: {
       type: DataTypes.STRING,
-      field: "itemId", // Match actual database column name
+      field: "itemid", // Database column is lowercase
     },
     _id: {
       type: DataTypes.STRING,
@@ -34,11 +34,11 @@ const Item = sequelize.define(
     },
     costPrice: {
       type: DataTypes.DECIMAL(10, 2),
-      field: "costPrice", // Match actual database column name
+      field: "costprice", // Database column is lowercase
     },
     companyPrice: {
       type: DataTypes.DECIMAL(10, 2),
-      field: "companyPrice", // Match actual database column name
+      field: "companyprice", // Database column is lowercase
     },
     whole_sale_price: {
       type: DataTypes.DECIMAL(10, 2),
@@ -70,11 +70,11 @@ const Item = sequelize.define(
       type: DataTypes.STRING,
       allowNull: true,
       defaultValue: null,
-      field: "barCode", // Match actual database column name
+      field: "barcode", // Database column is lowercase
     },
     itemCode: {
       type: DataTypes.STRING,
-      field: "itemCode", // Match actual database column name
+      field: "itemcode", // Database column is lowercase
     },
     category: {
       type: DataTypes.STRING,
@@ -88,22 +88,22 @@ const Item = sequelize.define(
     expiryDate: {
       type: DataTypes.DATE,
       allowNull: true,
-      field: "expiryDate", // Match actual database column name
+      field: "expirydate", // Database column is lowercase
     },
     imgURL: {
       type: DataTypes.STRING,
-      field: "imgURL", // Match actual database column name
+      field: "imgurl", // Database column is lowercase
     },
     // ========== IMAGEKIT FIELDS ==========
     imageKitFileId: {
       type: DataTypes.STRING,
       allowNull: true,
-      field: "imageKitFileId", // Match actual database column name
+      field: "imagekitfileid", // Database column is lowercase
     },
     imageKitFilePath: {
       type: DataTypes.STRING,
       allowNull: true,
-      field: "imageKitFilePath", // Match actual database column name
+      field: "imagekitfilepath", // Database column is lowercase
     },
     // ========== END IMAGEKIT FIELDS ==========
     company_code: {
@@ -130,7 +130,7 @@ const Item = sequelize.define(
     weightType: {
       type: DataTypes.BOOLEAN,
       defaultValue: false,
-      field: "weightType", // Match actual database column name
+      field: "weighttype", // Database column is lowercase
     },
     boxes: {
       type: DataTypes.INTEGER,
@@ -145,7 +145,7 @@ const Item = sequelize.define(
     totalBoxes: {
       type: DataTypes.INTEGER,
       defaultValue: 0,
-      field: "totalBoxes", // Match actual database column name
+      field: "totalboxes", // Database column is lowercase
     },
     box: {
       type: DataTypes.BOOLEAN,
@@ -155,25 +155,25 @@ const Item = sequelize.define(
     piecesPerBox: {
       type: DataTypes.INTEGER,
       defaultValue: 0,
-      field: "piecesPerBox", // Match actual database column name
+      field: "piecesperbox", // Database column is lowercase
     },
     pricePerPiece: {
       type: DataTypes.DECIMAL(10, 2),
-      field: "pricePerPiece", // Match actual database column name
+      field: "priceperpiece", // Database column is lowercase
     },
     saleLabel: {
       type: DataTypes.STRING,
-      field: "saleLabel", // Match actual database column name
+      field: "salelabel", // Database column is lowercase
     },
     batchNumber: {
       type: DataTypes.JSON,
       defaultValue: [],
-      field: "batchNumber", // Match actual database column name
+      field: "batchnumber", // Database column is lowercase
     },
     imeiNumbers: {
       type: DataTypes.JSON,
       defaultValue: [],
-      field: "imeiNumbers", // Match actual database column name
+      field: "imeinumbers", // Database column is lowercase
     },
     created_at: {
       type: DataTypes.BIGINT,
@@ -189,12 +189,12 @@ const Item = sequelize.define(
   {
     tableName: "items",
     timestamps: false,
-    // Add this to automatically handle field name conversion
-    underscored: false, // Keep this as false since we're using explicit field mappings
+    // Use underscored option to automatically handle camelCase to snake_case conversion
+    underscored: false, // Keep false since we're using explicit field mappings
     indexes: [
       {
         unique: true,
-        fields: ["company_code", "barCode"], // Use model field name (barCode)
+        fields: ["company_code", "barCode"], // Use model field name
         name: "uniq_company_barcode",
         where: {
           barCode: {
@@ -220,12 +220,11 @@ const Item = sequelize.define(
             item._id = crypto.randomBytes(16).toString("hex");
             attempts++;
           } catch (error) {
-            // If there's an error, just break and use the generated _id
             break;
           }
         }
 
-        // Data cleaning and normalization
+        // Data cleaning and normalization - use model field names
         item.barCode = normalizeEmptyToNull(item.barCode);
         item.expiryDate = normalizeEmptyToNull(item.expiryDate);
         item.weightType = normalizeToBoolean(item.weightType);
@@ -258,7 +257,7 @@ const Item = sequelize.define(
       },
 
       beforeUpdate: async (item) => {
-        // Data cleaning and normalization
+        // Data cleaning and normalization - use model field names
         item.barCode = normalizeEmptyToNull(item.barCode);
         item.expiryDate = normalizeEmptyToNull(item.expiryDate);
         item.weightType = normalizeToBoolean(item.weightType);
