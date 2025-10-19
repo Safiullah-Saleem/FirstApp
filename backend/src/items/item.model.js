@@ -98,12 +98,12 @@ const Item = sequelize.define(
     imageKitFileId: {
       type: DataTypes.STRING,
       allowNull: true,
-      field: "imageKitFileId", // Database column is camelCase
+      field: "imagekitfileid", // Database column is lowercase
     },
     imageKitFilePath: {
       type: DataTypes.STRING,
       allowNull: true,
-      field: "imageKitFilePath", // Database column is camelCase
+      field: "imagekitfilepath", // Database column is lowercase
     },
     // ========== END IMAGEKIT FIELDS ==========
     company_code: {
@@ -189,11 +189,11 @@ const Item = sequelize.define(
   {
     tableName: "items",
     timestamps: false,
-    underscored: false, // Keep this as false since we're using explicit field mappings
+    underscored: false,
     indexes: [
       {
         unique: true,
-        fields: ["company_code", "barCode"], // Use model field name
+        fields: ["company_code", "barCode"],
         name: "uniq_company_barcode",
         where: {
           barCode: {
@@ -206,7 +206,6 @@ const Item = sequelize.define(
       beforeCreate: async (item) => {
         const crypto = require("crypto");
 
-        // Ensure globally unique _id
         if (!item._id) {
           item._id = crypto.randomBytes(16).toString("hex");
         }
@@ -223,13 +222,12 @@ const Item = sequelize.define(
           }
         }
 
-        // Data cleaning and normalization - use model field names
+        // Use model field names in hooks
         item.barCode = normalizeEmptyToNull(item.barCode);
         item.expiryDate = normalizeEmptyToNull(item.expiryDate);
         item.weightType = normalizeToBoolean(item.weightType);
         item.box = normalizeToBoolean(item.box);
 
-        // Normalize numeric fields
         item.weight = normalizeToNumber(item.weight);
         item.discount = normalizeToNumber(item.discount);
         item.quantity = normalizeToInteger(item.quantity);
@@ -240,7 +238,6 @@ const Item = sequelize.define(
         item.piecesPerBox = normalizeToInteger(item.piecesPerBox);
         item.pricePerPiece = normalizeToNumber(item.pricePerPiece);
 
-        // Handle ImageKit fields consistency
         if (
           item.imgURL &&
           !item.imageKitFileId &&
@@ -256,13 +253,11 @@ const Item = sequelize.define(
       },
 
       beforeUpdate: async (item) => {
-        // Data cleaning and normalization - use model field names
         item.barCode = normalizeEmptyToNull(item.barCode);
         item.expiryDate = normalizeEmptyToNull(item.expiryDate);
         item.weightType = normalizeToBoolean(item.weightType);
         item.box = normalizeToBoolean(item.box);
 
-        // Normalize numeric fields
         item.weight = normalizeToNumber(item.weight);
         item.discount = normalizeToNumber(item.discount);
         item.quantity = normalizeToInteger(item.quantity);
@@ -273,7 +268,6 @@ const Item = sequelize.define(
         item.piecesPerBox = normalizeToInteger(item.piecesPerBox);
         item.pricePerPiece = normalizeToNumber(item.pricePerPiece);
 
-        // Handle ImageKit fields consistency
         if (
           item.imgURL &&
           !item.imageKitFileId &&
@@ -287,11 +281,9 @@ const Item = sequelize.define(
       },
 
       beforeSave: async (item) => {
-        // Additional safety checks
         item.weightType = normalizeToBoolean(item.weightType);
         item.box = normalizeToBoolean(item.box);
 
-        // Final ImageKit consistency check
         if (
           item.imgURL &&
           !item.imageKitFileId &&
@@ -305,7 +297,7 @@ const Item = sequelize.define(
   }
 );
 
-// Helper functions for data normalization
+// Helper functions
 function normalizeEmptyToNull(value) {
   if (
     value === "" ||
@@ -320,7 +312,6 @@ function normalizeEmptyToNull(value) {
 
 function normalizeToBoolean(value) {
   if (value === undefined || value === null) return false;
-
   if (typeof value === "boolean") return value;
   if (typeof value === "string") {
     return value === "true" || value === "1" || value === "1.00";
