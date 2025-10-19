@@ -11,7 +11,7 @@ const Item = sequelize.define(
     },
     itemId: {
       type: DataTypes.STRING,
-      field: "itemid", // Changed from "itemId" to "itemid"
+      field: "itemId", // Match actual database column name
     },
     _id: {
       type: DataTypes.STRING,
@@ -34,11 +34,11 @@ const Item = sequelize.define(
     },
     costPrice: {
       type: DataTypes.DECIMAL(10, 2),
-      field: "costprice", // Changed from "costPrice" to "costprice"
+      field: "costPrice", // Match actual database column name
     },
     companyPrice: {
       type: DataTypes.DECIMAL(10, 2),
-      field: "companyprice", // Changed from "companyPrice" to "companyprice"
+      field: "companyPrice", // Match actual database column name
     },
     whole_sale_price: {
       type: DataTypes.DECIMAL(10, 2),
@@ -70,11 +70,11 @@ const Item = sequelize.define(
       type: DataTypes.STRING,
       allowNull: true,
       defaultValue: null,
-      field: "barcode", // Changed from "barCode" to "barcode"
+      field: "barCode", // Match actual database column name
     },
     itemCode: {
       type: DataTypes.STRING,
-      field: "itemcode", // Changed from "itemCode" to "itemcode"
+      field: "itemCode", // Match actual database column name
     },
     category: {
       type: DataTypes.STRING,
@@ -88,22 +88,22 @@ const Item = sequelize.define(
     expiryDate: {
       type: DataTypes.DATE,
       allowNull: true,
-      field: "expirydate", // Changed from "expiryDate" to "expirydate"
+      field: "expiryDate", // Match actual database column name
     },
     imgURL: {
       type: DataTypes.STRING,
-      field: "imgurl", // Changed from "imgURL" to "imgurl"
+      field: "imgURL", // Match actual database column name
     },
     // ========== IMAGEKIT FIELDS ==========
     imageKitFileId: {
       type: DataTypes.STRING,
       allowNull: true,
-      field: "imagekitfileid", // Already correct
+      field: "imageKitFileId", // Match actual database column name
     },
     imageKitFilePath: {
       type: DataTypes.STRING,
       allowNull: true,
-      field: "imagekitfilepath", // Already correct
+      field: "imageKitFilePath", // Match actual database column name
     },
     // ========== END IMAGEKIT FIELDS ==========
     company_code: {
@@ -130,7 +130,7 @@ const Item = sequelize.define(
     weightType: {
       type: DataTypes.BOOLEAN,
       defaultValue: false,
-      field: "weighttype", // Changed from "weightType" to "weighttype"
+      field: "weightType", // Match actual database column name
     },
     boxes: {
       type: DataTypes.INTEGER,
@@ -145,7 +145,7 @@ const Item = sequelize.define(
     totalBoxes: {
       type: DataTypes.INTEGER,
       defaultValue: 0,
-      field: "totalboxes", // Changed from "totalBoxes" to "totalboxes"
+      field: "totalBoxes", // Match actual database column name
     },
     box: {
       type: DataTypes.BOOLEAN,
@@ -155,25 +155,25 @@ const Item = sequelize.define(
     piecesPerBox: {
       type: DataTypes.INTEGER,
       defaultValue: 0,
-      field: "piecesperbox", // Changed from "piecesPerBox" to "piecesperbox"
+      field: "piecesPerBox", // Match actual database column name
     },
     pricePerPiece: {
       type: DataTypes.DECIMAL(10, 2),
-      field: "priceperpiece", // Changed from "pricePerPiece" to "priceperpiece"
+      field: "pricePerPiece", // Match actual database column name
     },
     saleLabel: {
       type: DataTypes.STRING,
-      field: "salelabel", // Changed from "saleLabel" to "salelabel"
+      field: "saleLabel", // Match actual database column name
     },
     batchNumber: {
       type: DataTypes.JSON,
       defaultValue: [],
-      field: "batchnumber", // Changed from "batchNumber" to "batchnumber"
+      field: "batchNumber", // Match actual database column name
     },
     imeiNumbers: {
       type: DataTypes.JSON,
       defaultValue: [],
-      field: "imeinumbers", // Changed from "imeiNumbers" to "imeinumbers"
+      field: "imeiNumbers", // Match actual database column name
     },
     created_at: {
       type: DataTypes.BIGINT,
@@ -189,14 +189,15 @@ const Item = sequelize.define(
   {
     tableName: "items",
     timestamps: false,
+    // Add this to automatically handle field name conversion
+    underscored: false, // Keep this as false since we're using explicit field mappings
     indexes: [
       {
         unique: true,
-        fields: ["company_code", "barcode"], // Changed "barCode" to "barcode"
+        fields: ["company_code", "barCode"], // Use model field name (barCode)
         name: "uniq_company_barcode",
         where: {
-          barcode: {
-            // Changed "barCode" to "barcode"
+          barCode: {
             [sequelize.Sequelize.Op.ne]: null,
           },
         },
@@ -225,9 +226,9 @@ const Item = sequelize.define(
         }
 
         // Data cleaning and normalization
-        item.barcode = normalizeEmptyToNull(item.barcode); // Changed barCode to barcode
-        item.expirydate = normalizeEmptyToNull(item.expirydate); // Changed expiryDate to expirydate
-        item.weighttype = normalizeToBoolean(item.weighttype); // Changed weightType to weighttype
+        item.barCode = normalizeEmptyToNull(item.barCode);
+        item.expiryDate = normalizeEmptyToNull(item.expiryDate);
+        item.weightType = normalizeToBoolean(item.weightType);
         item.box = normalizeToBoolean(item.box);
 
         // Normalize numeric fields
@@ -237,18 +238,18 @@ const Item = sequelize.define(
         item.minquantity = normalizeToInteger(item.minquantity);
         item.boxes = normalizeToInteger(item.boxes);
         item.packing = normalizeToInteger(item.packing);
-        item.totalboxes = normalizeToInteger(item.totalboxes); // Changed totalBoxes to totalboxes
-        item.piecesperbox = normalizeToInteger(item.piecesperbox); // Changed piecesPerBox to piecesperbox
-        item.priceperpiece = normalizeToNumber(item.priceperpiece); // Changed pricePerPiece to priceperpiece
+        item.totalBoxes = normalizeToInteger(item.totalBoxes);
+        item.piecesPerBox = normalizeToInteger(item.piecesPerBox);
+        item.pricePerPiece = normalizeToNumber(item.pricePerPiece);
 
         // Handle ImageKit fields consistency
         if (
-          item.imgurl && // Changed imgURL to imgurl
-          !item.imagekitfileid && // Changed imageKitFileId to imagekitfileid
-          !item.imgurl.includes("imagekit.io") // Changed imgURL to imgurl
+          item.imgURL &&
+          !item.imageKitFileId &&
+          !item.imgURL.includes("imagekit.io")
         ) {
-          item.imagekitfileid = null; // Changed imageKitFileId to imagekitfileid
-          item.imagekitfilepath = null; // Changed imageKitFilePath to imagekitfilepath
+          item.imageKitFileId = null;
+          item.imageKitFilePath = null;
         }
 
         const timestamp = Math.floor(Date.now() / 1000);
@@ -258,9 +259,9 @@ const Item = sequelize.define(
 
       beforeUpdate: async (item) => {
         // Data cleaning and normalization
-        item.barcode = normalizeEmptyToNull(item.barcode); // Changed barCode to barcode
-        item.expirydate = normalizeEmptyToNull(item.expirydate); // Changed expiryDate to expirydate
-        item.weighttype = normalizeToBoolean(item.weighttype); // Changed weightType to weighttype
+        item.barCode = normalizeEmptyToNull(item.barCode);
+        item.expiryDate = normalizeEmptyToNull(item.expiryDate);
+        item.weightType = normalizeToBoolean(item.weightType);
         item.box = normalizeToBoolean(item.box);
 
         // Normalize numeric fields
@@ -270,18 +271,18 @@ const Item = sequelize.define(
         item.minquantity = normalizeToInteger(item.minquantity);
         item.boxes = normalizeToInteger(item.boxes);
         item.packing = normalizeToInteger(item.packing);
-        item.totalboxes = normalizeToInteger(item.totalboxes); // Changed totalBoxes to totalboxes
-        item.piecesperbox = normalizeToInteger(item.piecesperbox); // Changed piecesPerBox to piecesperbox
-        item.priceperpiece = normalizeToNumber(item.priceperpiece); // Changed pricePerPiece to priceperpiece
+        item.totalBoxes = normalizeToInteger(item.totalBoxes);
+        item.piecesPerBox = normalizeToInteger(item.piecesPerBox);
+        item.pricePerPiece = normalizeToNumber(item.pricePerPiece);
 
         // Handle ImageKit fields consistency
         if (
-          item.imgurl && // Changed imgURL to imgurl
-          !item.imagekitfileid && // Changed imageKitFileId to imagekitfileid
-          !item.imgurl.includes("imagekit.io") // Changed imgURL to imgurl
+          item.imgURL &&
+          !item.imageKitFileId &&
+          !item.imgURL.includes("imagekit.io")
         ) {
-          item.imagekitfileid = null; // Changed imageKitFileId to imagekitfileid
-          item.imagekitfilepath = null; // Changed imageKitFilePath to imagekitfilepath
+          item.imageKitFileId = null;
+          item.imageKitFilePath = null;
         }
 
         item.modified_at = Math.floor(Date.now() / 1000);
@@ -289,17 +290,17 @@ const Item = sequelize.define(
 
       beforeSave: async (item) => {
         // Additional safety checks
-        item.weighttype = normalizeToBoolean(item.weighttype); // Changed weightType to weighttype
+        item.weightType = normalizeToBoolean(item.weightType);
         item.box = normalizeToBoolean(item.box);
 
         // Final ImageKit consistency check
         if (
-          item.imgurl && // Changed imgURL to imgurl
-          !item.imagekitfileid && // Changed imageKitFileId to imagekitfileid
-          !item.imgurl.includes("imagekit.io") // Changed imgURL to imgurl
+          item.imgURL &&
+          !item.imageKitFileId &&
+          !item.imgURL.includes("imagekit.io")
         ) {
-          item.imagekitfileid = null; // Changed imageKitFileId to imagekitfileid
-          item.imagekitfilepath = null; // Changed imageKitFilePath to imagekitfilepath
+          item.imageKitFileId = null;
+          item.imageKitFilePath = null;
         }
       },
     },
