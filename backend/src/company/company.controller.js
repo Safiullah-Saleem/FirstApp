@@ -1,4 +1,63 @@
 const User = require("../user/user.model");
+const { authenticate } = require("../middleware/auth");
+
+// Utility Functions
+const buildCompanyResponse = (company) => ({
+  _id: company.company_code,
+  _rev: `7-${company.id}`,
+  access: company.access || [],
+  company_name: company.company_name,
+  address: company.address,
+  created_at: company.created_at,
+  modified_at: company.modified_at,
+  featuresAccess: company.features_access || [],
+  ledgerRegions: company.ledger_regions || [],
+  stockValue: company.stock_value || "no",
+  billStamp: company.bill_stamp || {},
+  terms_conditions: company.terms_conditions || "",
+  gst_number: company.gst_number || "",
+  company_logo: company.company_logo || "",
+  ceo_name: company.name,
+  ceo_email: company.email,
+  ceo_phone: company.phone,
+  isTrial: company.isTrial,
+  isPaid: company.isPaid
+});
+
+const errorResponse = (statusCode, message) => ({
+  response: {
+    status: { statusCode, statusMessage: message },
+    data: null,
+  }
+});
+
+const successResponse = (message, data = null) => ({
+  response: {
+    status: { statusCode: 200, statusMessage: message },
+    data
+  }
+});
+
+// Extract company data from request
+const extractCompanyData = (req) => {
+  let companyData, companyId;
+
+  if (req.body.request?.data?.company) {
+    companyData = req.body.request.data.company;
+    companyId = req.body.request.data.company._id;
+  } else if (req.body.data?.company) {
+    companyData = req.body.data.company;
+    companyId = req.body.data.company._id;
+  } else if (req.body.company) {
+    companyData = req.body.company;
+    companyId = req.body.company._id;
+  } else {
+    companyData = req.body;
+    companyId = req.body._id;
+  }
+
+  return { companyData, companyId };
+};
 
 // Update Company Settings
 const updateCompany = async (req, res) => {
@@ -6,56 +65,34 @@ const updateCompany = async (req, res) => {
     console.log("=== UPDATE COMPANY SETTINGS ===");
     console.log("Request body:", req.body);
 
-    let companyData;
-    let companyId;
-
-    // Handle different request formats
-    if (
-      req.body.request &&
-      req.body.request.data &&
-      req.body.request.data.company
-    ) {
-      companyData = req.body.request.data.company;
-      companyId = req.body.request.data.company._id;
-    } else if (req.body.data && req.body.data.company) {
-      companyData = req.body.data.company;
-      companyId = req.body.data.company._id;
-    } else if (req.body.company) {
-      companyData = req.body.company;
-      companyId = req.body.company._id;
-    } else {
-      companyData = req.body;
-      companyId = req.body._id;
-    }
+    const { companyData, companyId } = extractCompanyData(req);
 
     console.log("Company ID to update:", companyId);
     console.log("Company update data:", companyData);
 
     if (!companyId) {
-      return res.status(400).json({
-        response: {
-          status: {
-            statusCode: 400,
-            statusMessage: "Company ID is required",
-          },
-          data: null,
-        },
-      });
+      return res.status(400).json(
+        errorResponse(400, "Company ID is required")
+      );
     }
 
-    // Find company by company_code
-    const company = await User.findOne({ where: { company_code: companyId } });
+    // SECURITY: Ensure user can only update their own company
+    const userCompanyCode = req.user.company_code;
+    if (companyId !== userCompanyCode) {
+      return res.status(403).json(
+        errorResponse(403, "Access denied. You can only update your own company settings.")
+      );
+    }
+
+    // Find company by company_code (user's own company)
+    const company = await User.findOne({ 
+      where: { company_code: userCompanyCode } 
+    });
 
     if (!company) {
-      return res.status(404).json({
-        response: {
-          status: {
-            statusCode: 404,
-            statusMessage: "Company not found",
-          },
-          data: null,
-        },
-      });
+      return res.status(404).json(
+        errorResponse(404, "Company not found")
+      );
     }
 
     // Prepare update data
@@ -64,74 +101,35 @@ const updateCompany = async (req, res) => {
     };
 
     // Update allowed fields
-    if (companyData.company_name)
-      updateData.company_name = companyData.company_name;
-    if (companyData.address) updateData.address = companyData.address;
-    if (companyData.terms_conditions !== undefined)
-      updateData.terms_conditions = companyData.terms_conditions;
-    if (companyData.gst_number !== undefined)
-      updateData.gst_number = companyData.gst_number;
-    if (companyData.company_logo !== undefined)
-      updateData.company_logo = companyData.company_logo;
-    if (companyData.bill_stamp !== undefined)
-      updateData.bill_stamp = companyData.bill_stamp;
-    if (companyData.stock_value !== undefined)
-      updateData.stock_value = companyData.stock_value;
-    if (companyData.ledger_regions !== undefined)
-      updateData.ledger_regions = companyData.ledger_regions;
-    if (companyData.access !== undefined)
-      updateData.access = companyData.access;
-    if (companyData.features_access !== undefined)
-      updateData.features_access = companyData.features_access;
+    const allowedFields = [
+      'company_name', 'address', 'terms_conditions', 'gst_number',
+      'company_logo', 'bill_stamp', 'stock_value', 'ledger_regions',
+      'access', 'features_access'
+    ];
+
+    allowedFields.forEach(field => {
+      if (companyData[field] !== undefined) {
+        updateData[field] = companyData[field];
+      }
+    });
 
     // Update company
     await company.update(updateData);
 
-    console.log("Company settings updated successfully:", companyId);
+    console.log("Company settings updated successfully:", userCompanyCode);
 
-    // Prepare response
-    const companyResponse = {
-      _id: company.company_code,
-      _rev: `7-${company.id}`,
-      access: company.access || [],
-      company_name: company.company_name,
-      address: company.address,
-      created_at: company.created_at,
-      modified_at: company.modified_at,
-      featuresAccess: company.features_access || [],
-      ledgerRegions: company.ledger_regions || [],
-      stockValue: company.stock_value || "no",
-      billStamp: company.bill_stamp || {},
-      terms_conditions: company.terms_conditions || "",
-      gst_number: company.gst_number || "",
-      company_logo: company.company_logo || "",
-      ceo_name: company.name,
-      ceo_email: company.email,
-      ceo_phone: company.phone,
-    };
+    const companyResponse = buildCompanyResponse(company);
 
-    res.json({
-      response: {
-        status: {
-          statusCode: 200,
-          statusMessage: "Company settings updated successfully",
-        },
-        data: {
-          company: companyResponse,
-        },
-      },
-    });
+    res.json(
+      successResponse("Company settings updated successfully", {
+        company: companyResponse,
+      })
+    );
   } catch (error) {
     console.error("UPDATE COMPANY ERROR:", error);
-    res.status(500).json({
-      response: {
-        status: {
-          statusCode: 500,
-          statusMessage: "Internal server error",
-        },
-        data: null,
-      },
-    });
+    res.status(500).json(
+      errorResponse(500, "Internal server error")
+    );
   }
 };
 
@@ -141,66 +139,37 @@ const getCompanyByPath = async (req, res) => {
     const { companyCode } = req.params;
     console.log("=== GET COMPANY SETTINGS ===", companyCode);
 
+    // SECURITY: Ensure user can only access their own company
+    const userCompanyCode = req.user.company_code;
+    if (companyCode !== userCompanyCode) {
+      return res.status(403).json(
+        errorResponse(403, "Access denied. You can only access your own company settings.")
+      );
+    }
+
     const company = await User.findOne({
-      where: { company_code: companyCode },
+      where: { company_code: userCompanyCode },
       attributes: { exclude: ["password"] },
     });
 
     if (!company) {
-      return res.status(404).json({
-        response: {
-          status: {
-            statusCode: 404,
-            statusMessage: "Company not found",
-          },
-          data: null,
-        },
-      });
+      return res.status(404).json(
+        errorResponse(404, "Company not found")
+      );
     }
 
-    // Prepare response
-    const companyResponse = {
-      _id: company.company_code,
-      _rev: `7-${company.id}`,
-      access: company.access || [],
-      company_name: company.company_name,
-      address: company.address,
-      created_at: company.created_at,
-      modified_at: company.modified_at,
-      featuresAccess: company.features_access || [],
-      ledgerRegions: company.ledger_regions || [],
-      stockValue: company.stock_value || "no",
-      billStamp: company.bill_stamp || {},
-      terms_conditions: company.terms_conditions || "",
-      gst_number: company.gst_number || "",
-      company_logo: company.company_logo || "",
-      ceo_name: company.name,
-      ceo_email: company.email,
-      ceo_phone: company.phone,
-    };
+    const companyResponse = buildCompanyResponse(company);
 
-    res.json({
-      response: {
-        status: {
-          statusCode: 200,
-          statusMessage: "OK",
-        },
-        data: {
-          company: companyResponse,
-        },
-      },
-    });
+    res.json(
+      successResponse("OK", {
+        company: companyResponse,
+      })
+    );
   } catch (error) {
     console.error("GET COMPANY ERROR:", error);
-    res.status(500).json({
-      response: {
-        status: {
-          statusCode: 500,
-          statusMessage: "Internal server error",
-        },
-        data: null,
-      },
-    });
+    res.status(500).json(
+      errorResponse(500, "Internal server error")
+    );
   }
 };
 
@@ -213,80 +182,70 @@ const getCompany = async (req, res) => {
     let companyCode;
 
     // Extract company_code from the specific request format
-    if (req.body.request && req.body.request.data && req.body.request.data._id) {
+    if (req.body.request?.data?._id) {
       companyCode = req.body.request.data._id;
+    } else if (req.body.data?._id) {
+      companyCode = req.body.data._id;
+    } else if (req.body._id) {
+      companyCode = req.body._id;
     } else {
-      return res.status(400).json({
-        response: {
-          status: {
-            statusCode: 400,
-            statusMessage: "Invalid request format. Expected: { request: { method: 'getCompany', data: { _id: 'company_code' } } }",
-          },
-          data: null,
-        },
-      });
+      return res.status(400).json(
+        errorResponse(400, "Invalid request format. Company ID (_id) is required.")
+      );
     }
 
     console.log("Looking for company with code:", companyCode);
 
-    // Check if company exists in the User model
+    // SECURITY: Ensure user can only access their own company
+    const userCompanyCode = req.user.company_code;
+    if (companyCode !== userCompanyCode) {
+      return res.status(403).json(
+        errorResponse(403, "Access denied. You can only access your own company.")
+      );
+    }
+
     const company = await User.findOne({
-      where: { company_code: companyCode },
+      where: { company_code: userCompanyCode },
       attributes: { exclude: ["password"] },
     });
 
     if (!company) {
-      return res.status(404).json({
-        response: {
-          status: {
-            statusCode: 404,
-            statusMessage: "Company not found",
-          },
-          data: null,
-        },
-      });
+      return res.status(404).json(
+        errorResponse(404, "Company not found")
+      );
     }
 
-    // Prepare response in the exact format specified
+    // FIXED: Use dynamic _rev and remove array wrapper
     const companyResponse = {
       _id: company.company_code,
-      _rev: `7-cef6fa127a9bcfb26d0a4f528ec683c5`,
+      _rev: `7-${company.id}`, // ✅ Dynamic, not hard-coded
       access: company.access || [],
       company_name: company.company_name,
       address: company.address,
       created_at: company.created_at,
       modified_at: company.modified_at,
       featuresAccess: company.features_access || [],
-      ledgerRegions: company.ledger_regions || ["title"],
+      ledgerRegions: company.ledger_regions || [],
       stockValue: company.stock_value || "no",
-      billStamp: company.bill_stamp || {
-        name: "cjm logo.png",
-        url: "https://managekaro-documents.s3.us-west-2.amazonaws.com/4530/1cjm%20logo.png"
-      }
+      billStamp: company.bill_stamp || {},
+      terms_conditions: company.terms_conditions || "",
+      gst_number: company.gst_number || "",
+      company_logo: company.company_logo || "",
+      ceo_name: company.name,
+      ceo_email: company.email,
+      ceo_phone: company.phone
     };
 
-    res.json({
-      response: {
-        status: {
-          statusCode: 200,
-          statusMessage: "OK"
-        },
-        data: {
-          company: [companyResponse]
-        }
-      }
-    });
+    res.json(
+      successResponse("OK", {
+        company: companyResponse // ✅ Not wrapped in array
+      })
+    );
   } catch (error) {
     console.error("GET COMPANY ERROR:", error);
-    res.status(500).json({
-      response: {
-        status: {
-          statusCode: 500,
-          statusMessage: "Internal server error",
-        },
-        data: null,
-      },
-    });
+    res.status(500).json(
+      errorResponse(500, "Internal server error")
+    );
   }
 };
 
@@ -299,73 +258,101 @@ const updateCompanyPassword = async (req, res) => {
     const { company_code, current_password, new_password } = req.body;
 
     if (!company_code || !current_password || !new_password) {
-      return res.status(400).json({
-        response: {
-          status: {
-            statusCode: 400,
-            statusMessage:
-              "Company code, current password and new password are required",
-          },
-          data: null,
-        },
-      });
+      return res.status(400).json(
+        errorResponse(400, "Company code, current password and new password are required")
+      );
     }
 
-    // Find company
-    const company = await User.findOne({ where: { company_code } });
+    // SECURITY: Ensure user can only update their own company password
+    const userCompanyCode = req.user.company_code;
+    if (company_code !== userCompanyCode) {
+      return res.status(403).json(
+        errorResponse(403, "Access denied. You can only update your own company password.")
+      );
+    }
+
+    // Find company (user's own company)
+    const company = await User.findOne({ 
+      where: { company_code: userCompanyCode } 
+    });
 
     if (!company) {
-      return res.status(404).json({
-        response: {
-          status: {
-            statusCode: 404,
-            statusMessage: "Company not found",
-          },
-          data: null,
-        },
-      });
+      return res.status(404).json(
+        errorResponse(404, "Company not found")
+      );
     }
 
     // Verify current password
     const isPasswordValid = await company.correctPassword(current_password);
     if (!isPasswordValid) {
-      return res.status(401).json({
-        response: {
-          status: {
-            statusCode: 401,
-            statusMessage: "Current password is incorrect",
-          },
-          data: null,
-        },
-      });
+      return res.status(401).json(
+        errorResponse(401, "Current password is incorrect")
+      );
     }
 
-    // Update password
-    company.password = new_password;
-    await company.save();
+    // Additional password validation
+    if (new_password.length < 6) {
+      return res.status(400).json(
+        errorResponse(400, "New password must be at least 6 characters long")
+      );
+    }
+
+    // Prevent setting the same password
+    if (current_password === new_password) {
+      return res.status(400).json(
+        errorResponse(400, "New password must be different from current password")
+      );
+    }
+
+    // Update password (model hook will hash it)
+    await company.update({ 
+      password: new_password,
+      modified_at: Math.floor(Date.now() / 1000)
+    });
 
     console.log("Company password updated successfully");
 
-    res.json({
-      response: {
-        status: {
-          statusCode: 200,
-          statusMessage: "Password updated successfully",
-        },
-        data: null,
-      },
-    });
+    res.json(
+      successResponse("Password updated successfully")
+    );
   } catch (error) {
     console.error("UPDATE PASSWORD ERROR:", error);
-    res.status(500).json({
-      response: {
-        status: {
-          statusCode: 500,
-          statusMessage: "Internal server error",
-        },
-        data: null,
-      },
+    res.status(500).json(
+      errorResponse(500, "Internal server error")
+    );
+  }
+};
+
+// Get Current Company (for authenticated user)
+const getCurrentCompany = async (req, res) => {
+  try {
+    const userCompanyCode = req.user.company_code;
+    
+    console.log("=== GET CURRENT COMPANY ===", userCompanyCode);
+
+    const company = await User.findOne({
+      where: { company_code: userCompanyCode },
+      attributes: { exclude: ["password"] },
     });
+
+    if (!company) {
+      return res.status(404).json(
+        errorResponse(404, "Company not found")
+      );
+    }
+
+    const companyResponse = buildCompanyResponse(company);
+
+    res.json(
+      successResponse("OK", {
+        company: companyResponse,
+      })
+    );
+  } catch (error) {
+    console.error("GET CURRENT COMPANY ERROR:", error);
+    res.status(500).json(
+      errorResponse(500, "Internal server error")
+    );
   }
 };
 
@@ -374,4 +361,5 @@ module.exports = {
   getCompany,
   getCompanyByPath,
   updateCompanyPassword,
+  getCurrentCompany
 };

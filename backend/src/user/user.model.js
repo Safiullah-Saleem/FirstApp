@@ -42,17 +42,16 @@ const User = sequelize.define(
       type: DataTypes.STRING,
       unique: true,
     },
-    is_trial: {
-      // CHANGED: Use snake_case to match database
+    // ✅ CONSISTENT: Use camelCase for JavaScript, let Sequelize handle database mapping
+    isTrial: {
       type: DataTypes.BOOLEAN,
       defaultValue: true,
-      field: "is_trial", // Keep field mapping for consistency
+      field: "is_trial"
     },
-    is_paid: {
-      // CHANGED: Use snake_case to match database
+    isPaid: {
       type: DataTypes.BOOLEAN,
       defaultValue: false,
-      field: "is_paid",
+      field: "is_paid"
     },
     terms_conditions: {
       type: DataTypes.TEXT,
@@ -95,8 +94,8 @@ const User = sequelize.define(
       allowNull: true,
     },
     role: {
-      type: DataTypes.ENUM("admin", "user", "manager"),
-      defaultValue: "user",
+      type: DataTypes.ENUM("super_admin", "company_admin", "staff"),
+      defaultValue: "company_admin",
     },
     is_active: {
       type: DataTypes.BOOLEAN,
@@ -117,11 +116,6 @@ const User = sequelize.define(
     date_of_birth: {
       type: DataTypes.DATEONLY,
       allowNull: true,
-    },
-    updated_at: {
-      type: DataTypes.DATE,
-      allowNull: true,
-      defaultValue: DataTypes.NOW,
     },
     created_at: {
       type: DataTypes.BIGINT,
@@ -144,59 +138,19 @@ const User = sequelize.define(
           }
 
           // Generate unique company code
-          let isUnique = false;
-          let code;
-          let attempts = 0;
-
-          while (!isUnique && attempts < 10) {
-            code = Math.floor(1000 + Math.random() * 9000).toString();
-
-            const [results] = await sequelize.query(
-              "SELECT COUNT(*) as count FROM users WHERE company_code = ?",
-              {
-                replacements: [code],
-                type: sequelize.QueryTypes.SELECT,
-              }
-            );
-
-            if (results.count === 0) {
-              isUnique = true;
-            }
-            attempts++;
-          }
-
-          if (!isUnique) {
-            code = Date.now().toString().slice(-4);
-          }
-
-          user.company_code = code;
+          user.company_code = await generateUniqueCompanyCode();
 
           // Set timestamps
           const timestamp = Math.floor(Date.now() / 1000);
-          user.created_at = user.created_at || timestamp;
-          user.modified_at = user.modified_at || timestamp;
-          user.updated_at = user.updated_at || new Date();
+          user.created_at = timestamp;
+          user.modified_at = timestamp;
 
-          // Initialize required fields
+          // Set default values for required fields
           user.company_name = user.company_name || "My Company";
-          user.first_name = user.first_name || "";
-          user.last_name = user.last_name || "";
+          user.name = user.name || user.company_name || "User";
+          user.role = user.role || "company_admin";
 
-          // Auto-generate name
-          if (!user.name && (user.first_name || user.last_name)) {
-            user.name = `${user.first_name || ""} ${
-              user.last_name || ""
-            }`.trim();
-          } else if (!user.name) {
-            user.name = user.company_name || "User";
-          }
-
-          user.role = user.role || "user";
-          user.is_active = user.is_active !== undefined ? user.is_active : true;
-          user.email_verified =
-            user.email_verified !== undefined ? user.email_verified : false;
-
-          // Initialize company settings
+          // Initialize company settings with proper defaults
           user.terms_conditions = user.terms_conditions || "";
           user.gst_number = user.gst_number || "";
           user.company_logo = user.company_logo || "";
@@ -205,6 +159,11 @@ const User = sequelize.define(
           user.ledger_regions = user.ledger_regions || [];
           user.access = user.access || [];
           user.features_access = user.features_access || [];
+          user.is_active = user.is_active !== undefined ? user.is_active : true;
+          user.email_verified = user.email_verified !== undefined ? user.email_verified : false;
+          user.isTrial = user.isTrial !== undefined ? user.isTrial : true;
+          user.isPaid = user.isPaid !== undefined ? user.isPaid : false;
+
         } catch (error) {
           console.error("Error in user beforeCreate hook:", error);
           throw error;
@@ -214,12 +173,17 @@ const User = sequelize.define(
       beforeUpdate: async (user) => {
         try {
           user.modified_at = Math.floor(Date.now() / 1000);
-          user.updated_at = new Date();
 
           // Hash password if it's being updated
           if (user.changed("password") && user.password) {
             user.password = await bcrypt.hash(user.password, 12);
           }
+
+          // Update name if first_name or last_name changed
+          if (user.changed("first_name") || user.changed("last_name")) {
+            user.name = `${user.first_name || ""} ${user.last_name || ""}`.trim();
+          }
+
         } catch (error) {
           console.error("Error in user beforeUpdate hook:", error);
           throw error;
@@ -229,22 +193,51 @@ const User = sequelize.define(
   }
 );
 
+// Generate unique company code
+const generateUniqueCompanyCode = async () => {
+  let isUnique = false;
+  let code;
+  let attempts = 0;
+  const maxAttempts = 10;
+
+  while (!isUnique && attempts < maxAttempts) {
+    code = Math.floor(1000 + Math.random() * 9000).toString();
+    
+    const existingUser = await User.findOne({
+      where: { company_code: code }
+    });
+
+    if (!existingUser) {
+      isUnique = true;
+    }
+    attempts++;
+  }
+
+  if (!isUnique) {
+    // Fallback: use timestamp-based code
+    code = `COMP${Date.now().toString().slice(-6)}`;
+  }
+
+  return code;
+};
+
 // Instance method to check password
 User.prototype.correctPassword = async function (candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
-// UPDATED: Fix property names in getProfile method
+// Get user profile (exclude sensitive data)
 User.prototype.getProfile = function () {
   return {
     id: this.id,
     name: this.name,
     email: this.email,
     phone: this.phone,
+    address: this.address,
     company_name: this.company_name,
     company_code: this.company_code,
-    is_trial: this.is_trial, // CHANGED: from isTrial
-    is_paid: this.is_paid, // CHANGED: from isPaid
+    isTrial: this.isTrial,
+    isPaid: this.isPaid,
     first_name: this.first_name,
     last_name: this.last_name,
     role: this.role,
@@ -254,7 +247,60 @@ User.prototype.getProfile = function () {
     date_of_birth: this.date_of_birth,
     created_at: this.created_at,
     last_login: this.last_login,
+    company_logo: this.company_logo,
+    terms_conditions: this.terms_conditions,
+    gst_number: this.gst_number,
+    features_access: this.features_access,
+    access: this.access
   };
+};
+
+// Static method to find active users by company
+User.findByCompany = function (companyCode) {
+  return this.findAll({
+    where: { 
+      company_code: companyCode,
+      is_active: true
+    },
+    attributes: { exclude: ['password'] }
+  });
+};
+
+// Static method to find by email with company code
+User.findByEmailWithCompany = function (email) {
+  return this.findOne({
+    where: { email },
+    attributes: { include: ['company_code', 'role', 'is_active'] }
+  });
+};
+
+// Static method to find admin by company
+User.findAdminByCompany = function (companyCode) {
+  return this.findOne({
+    where: { 
+      company_code: companyCode,
+      role: 'company_admin',
+      is_active: true
+    },
+    attributes: { exclude: ['password'] }
+  });
+};
+
+// Override toJSON to exclude password
+User.prototype.toJSON = function () {
+  const values = { ...this.get() };
+  delete values.password;
+  return values;
+};
+
+// Instance method to check if user is admin
+User.prototype.isAdmin = function () {
+  return this.role === 'company_admin' || this.role === 'super_admin';
+};
+
+// Instance method to check if user is active
+User.prototype.isActive = function () {
+  return this.is_active === true;
 };
 
 module.exports = User;

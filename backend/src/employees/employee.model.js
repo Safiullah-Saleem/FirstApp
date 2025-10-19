@@ -2,23 +2,6 @@ const { DataTypes } = require("sequelize");
 const { sequelize } = require("../config/database");
 const bcrypt = require("bcryptjs");
 
-// Generate unique 4-digit employee code
-const generateUniqueEmployeeCode = async () => {
-  let isUnique = false;
-  let code;
-
-  while (!isUnique) {
-    code = Math.floor(1000 + Math.random() * 9000).toString(); // 4-digit code
-    const existingEmployee = await Employee.findOne({
-      where: { employee_code: code },
-    });
-    if (!existingEmployee) {
-      isUnique = true;
-    }
-  }
-  return code;
-};
-
 const Employee = sequelize.define(
   "Employee",
   {
@@ -34,11 +17,13 @@ const Employee = sequelize.define(
     username: {
       type: DataTypes.STRING,
       allowNull: false,
+      validate: {
+        notEmpty: true
+      }
     },
     email: {
       type: DataTypes.STRING,
       allowNull: false,
-      unique: true,
       validate: {
         isEmail: true,
       },
@@ -50,10 +35,34 @@ const Employee = sequelize.define(
     company_code: {
       type: DataTypes.STRING,
       allowNull: false,
+      validate: {
+        notEmpty: true
+      }
     },
     company_name: {
       type: DataTypes.STRING,
       allowNull: false,
+    },
+    // ADDED: Proper employee fields
+    phone: {
+      type: DataTypes.STRING,
+    },
+    department: {
+      type: DataTypes.STRING,
+    },
+    position: {
+      type: DataTypes.STRING,
+    },
+    role: {
+      type: DataTypes.ENUM('manager', 'staff', 'supervisor', 'accountant'),
+      defaultValue: 'staff'
+    },
+    status: {
+      type: DataTypes.ENUM('active', 'inactive', 'suspended'),
+      defaultValue: 'active'
+    },
+    join_date: {
+      type: DataTypes.BIGINT,
     },
     access: {
       type: DataTypes.JSON,
@@ -106,27 +115,95 @@ const Employee = sequelize.define(
     timestamps: false,
     hooks: {
       beforeCreate: async (employee) => {
-        // Hash password
-        employee.password = await bcrypt.hash(employee.password, 12);
-
-        // Generate unique employee code
+        // Generate unique employee code FIRST (before any DB operations)
         employee.employee_code = await generateUniqueEmployeeCode();
+        
+        // Hash password if provided, otherwise generate random one
+        if (employee.password) {
+          employee.password = await bcrypt.hash(employee.password, 12);
+        } else {
+          // Generate secure random password
+          const randomPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-8);
+          employee.password = await bcrypt.hash(randomPassword, 12);
+        }
 
         // Set timestamps
         const timestamp = Math.floor(Date.now() / 1000);
         employee.created_at = timestamp;
         employee.modified_at = timestamp;
+        
+        // Set join date if not provided
+        if (!employee.join_date) {
+          employee.join_date = timestamp;
+        }
       },
-      beforeUpdate: (employee) => {
+      beforeUpdate: async (employee) => {
         employee.modified_at = Math.floor(Date.now() / 1000);
+        
+        // Hash password if it's being updated
+        if (employee.changed('password') && employee.password) {
+          employee.password = await bcrypt.hash(employee.password, 12);
+        }
       },
     },
   }
 );
 
+// Generate unique 4-digit employee code (DEFINED AFTER Model)
+const generateUniqueEmployeeCode = async () => {
+  let isUnique = false;
+  let code;
+  let attempts = 0;
+  const maxAttempts = 10;
+
+  while (!isUnique && attempts < maxAttempts) {
+    code = Math.floor(1000 + Math.random() * 9000).toString(); // 4-digit code
+    const existingEmployee = await Employee.findOne({
+      where: { employee_code: code },
+    });
+    if (!existingEmployee) {
+      isUnique = true;
+    }
+    attempts++;
+  }
+
+  if (!isUnique) {
+    // Fallback: timestamp-based code
+    code = `EMP${Date.now().toString().slice(-6)}`;
+  }
+
+  return code;
+};
+
 // Instance method to check password
 Employee.prototype.correctPassword = async function (candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
+};
+
+// Instance method to get basic info (without password)
+Employee.prototype.toJSON = function () {
+  const values = { ...this.get() };
+  delete values.password;
+  return values;
+};
+
+// Static method to find by company
+Employee.findByCompany = function (companyCode) {
+  return this.findAll({
+    where: { company_code: companyCode },
+    attributes: { exclude: ['password'] }
+  });
+};
+
+// Static method to find active employees by company
+Employee.findActiveByCompany = function (companyCode) {
+  return this.findAll({
+    where: { 
+      company_code: companyCode,
+      status: 'active'
+    },
+    attributes: { exclude: ['password'] }
+  });
 };
 
 module.exports = Employee;

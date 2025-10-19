@@ -1,6 +1,41 @@
 const User = require("./user.model");
-const { generateToken, verifyPassword } = require("../utils/authUtils");
+const { generateToken } = require("../utils/authUtils");
 
+// Utility Functions
+const buildUserResponse = (user) => ({
+  _id: user.email,
+  _rev: `1-${user.id}`,
+  company_name: user.company_name,
+  address: user.address,
+  phone: user.phone,
+  email: user.email,
+  name: user.name,
+  company_code: user.company_code,
+  isTrial: user.isTrial,
+  isPaid: user.isPaid,
+  created_at: user.created_at,
+  modified_at: user.modified_at,
+  featuresAccess: user.features_access || [],
+  imgURL: user.company_logo || `https://managekaro-documents.s3.us-west-2.amazonaws.com/${user.company_code}/default-avatar.png`,
+  base_url: "",
+  gst: user.gst_number || 0,
+  terms_conditions: user.terms_conditions || "",
+  role: user.role || "company_admin"
+});
+
+const errorResponse = (statusCode, message) => ({
+  response: {
+    status: { statusCode, statusMessage: message },
+    data: null,
+  }
+});
+
+const successResponse = (message, data = null) => ({
+  response: {
+    status: { statusCode: 200, statusMessage: message },
+    data
+  }
+});
 
 // User Registration
 const signupAdmin = async (req, res) => {
@@ -11,11 +46,7 @@ const signupAdmin = async (req, res) => {
     let userData;
 
     // Handle different request formats
-    if (
-      req.body.request &&
-      req.body.request.data &&
-      req.body.request.data.user
-    ) {
+    if (req.body.request?.data?.user) {
       userData = req.body.request.data.user;
     } else if (req.body.user) {
       userData = req.body.user;
@@ -26,27 +57,22 @@ const signupAdmin = async (req, res) => {
     console.log("User data to save:", userData);
 
     // Check required fields
-    if (!userData.email) {
-      return res.status(400).json({
-        response: {
-          status: { statusCode: 400, statusMessage: "Email is required" },
-          data: null,
-        },
-      });
+    if (!userData.email || !userData.password) {
+      return res.status(400).json(
+        errorResponse(400, "Email and password are required")
+      );
     }
 
     console.log("Checking if user exists...");
     const existingUser = await User.findOne({
       where: { email: userData.email },
     });
+    
     if (existingUser) {
       console.log("User already exists");
-      return res.status(400).json({
-        response: {
-          status: { statusCode: 400, statusMessage: "User already exists" },
-          data: null,
-        },
-      });
+      return res.status(400).json(
+        errorResponse(400, "User already exists")
+      );
     }
 
     console.log("Creating new user...");
@@ -64,61 +90,34 @@ const signupAdmin = async (req, res) => {
     console.log("Company Code:", newUser.company_code);
 
     // Generate token
-    const token = generateToken(newUser);
+    const token = generateToken(newUser, 'user');
 
-    // Response
-    const userResponse = {
-      _id: newUser.email,
-      _rev: `1-${newUser.id}`,
-      company_name: newUser.company_name,
-      address: newUser.address,
-      phone: newUser.phone,
-      email: newUser.email,
-      name: newUser.name,
-      company_code: newUser.company_code,
-      isTrial: newUser.isTrial,
-      isPaid: newUser.isPaid,
-      created_at: newUser.created_at,
-      modified_at: newUser.modified_at,
-      featuresAccess: [],
-      imgURL: `https://managekaro-documents.s3.us-west-2.amazonaws.com/${newUser.company_code}/default-avatar.png`,
-      base_url: "",
-      gst: 0,
-    };
+    const userResponse = buildUserResponse(newUser);
 
-    res.json({
-      response: {
-        status: {
-          statusCode: 200,
-          statusMessage: "User registered successfully",
-        },
-        data: {
-          user: userResponse,
-          token: token,
-        },
-      },
-    });
+    res.json(
+      successResponse("User registered successfully", {
+        user: userResponse,
+        token: token,
+      })
+    );
   } catch (error) {
     console.error("SIGNUP ERROR:", error);
-    res.status(500).json({
-      response: {
-        status: { statusCode: 500, statusMessage: error.message },
-        data: null,
-      },
-    });
+    res.status(500).json(
+      errorResponse(500, error.message)
+    );
   }
 };
 
 // User Login
 const loginAdmin = async (req, res) => {
   try {
-    console.log("===LOGIN REQUEST ===");
+    console.log("=== LOGIN REQUEST ===");
     console.log("Request body:", req.body);
 
     let userData;
 
     // Handle different request formats
-    if (req.body.data && req.body.data.user) {
+    if (req.body.data?.user) {
       userData = req.body.data.user;
     } else if (req.body.user) {
       userData = req.body.user;
@@ -130,97 +129,49 @@ const loginAdmin = async (req, res) => {
 
     const { email, password } = userData;
 
-    // Check if email and password are provided
     if (!email || !password) {
-      return res.status(400).json({
-        response: {
-          status: {
-            statusCode: 400,
-            statusMessage: "Email and password are required",
-          },
-          data: null,
-        },
-      });
+      return res.status(400).json(
+        errorResponse(400, "Email and password are required")
+      );
     }
 
     // Find user by email
     const user = await User.findOne({ where: { email } });
 
     if (!user) {
-      return res.status(401).json({
-        response: {
-          status: {
-            statusCode: 401,
-            statusMessage: "Invalid email or password",
-          },
-          data: null,
-        },
-      });
+      return res.status(401).json(
+        errorResponse(401, "Invalid email or password")
+      );
     }
 
     // Check password
     const isPasswordValid = await user.correctPassword(password);
-
     if (!isPasswordValid) {
-      return res.status(401).json({
-        response: {
-          status: {
-            statusCode: 401,
-            statusMessage: "Invalid email or password",
-          },
-          data: null,
-        },
-      });
+      return res.status(401).json(
+        errorResponse(401, "Invalid email or password")
+      );
     }
 
-    // Generate token
-    const token = generateToken(user);
+    // Update last login
+    await user.update({ last_login: new Date() });
 
+    // Generate token
+    const token = generateToken(user, 'user');
     console.log("Login successful for:", email);
 
-    // Prepare user response (exclude password)
-    const userResponse = {
-      _id: user.email,
-      _rev: `1-${user.id}`,
-      company_name: user.company_name,
-      address: user.address,
-      phone: user.phone,
-      email: user.email,
-      name: user.name,
-      company_code: user.company_code,
-      isTrial: user.isTrial,
-      isPaid: user.isPaid,
-      created_at: user.created_at,
-      modified_at: user.modified_at,
-      featuresAccess: [],
-      imgURL: `https://managekaro-documents.s3.us-west-2.amazonaws.com/${user.company_code}/default-avatar.png`,
-      base_url: "",
-      gst: 0,
-    };
+    const userResponse = buildUserResponse(user);
 
-    res.json({
-      response: {
-        status: {
-          statusCode: 200,
-          statusMessage: "OK",
-        },
-        data: {
-          user: userResponse,
-          token: token,
-        },
-      },
-    });
+    res.json(
+      successResponse("OK", {
+        user: userResponse,
+        token: token,
+      })
+    );
   } catch (error) {
     console.error("LOGIN ERROR:", error);
-    res.status(500).json({
-      response: {
-        status: {
-          statusCode: 500,
-          statusMessage: "Internal server error",
-        },
-        data: null,
-      },
-    });
+    res.status(500).json(
+      errorResponse(500, "Internal server error")
+    );
   }
 };
 
@@ -234,7 +185,7 @@ const updateUser = async (req, res) => {
     let userId;
 
     // Handle different request formats
-    if (req.body.request && req.body.request.data) {
+    if (req.body.request?.data) {
       userId = req.body.request.data._id;
       userData = req.body.request.data.user || req.body.request.data;
     } else if (req.body.data) {
@@ -249,30 +200,26 @@ const updateUser = async (req, res) => {
     console.log("Update data:", userData);
 
     if (!userId) {
-      return res.status(400).json({
-        response: {
-          status: {
-            statusCode: 400,
-            statusMessage: "User ID is required",
-          },
-          data: null,
-        },
-      });
+      return res.status(400).json(
+        errorResponse(400, "User ID is required")
+      );
     }
 
-    // Find user by email (since _id is email in your example)
-    const user = await User.findOne({ where: { email: userId } });
+    // SECURITY: Ensure user can only update users in their company
+    const companyCode = req.user.company_code;
+
+    // Find user by email within the same company
+    const user = await User.findOne({ 
+      where: { 
+        email: userId,
+        company_code: companyCode // SECURITY: Only same company
+      } 
+    });
 
     if (!user) {
-      return res.status(404).json({
-        response: {
-          status: {
-            statusCode: 404,
-            statusMessage: "User not found",
-          },
-          data: null,
-        },
-      });
+      return res.status(404).json(
+        errorResponse(404, "User not found")
+      );
     }
 
     // Prepare update data
@@ -281,66 +228,34 @@ const updateUser = async (req, res) => {
     };
 
     // Update allowed fields
-    if (userData.name) updateData.name = userData.name;
-    if (userData.company_name) updateData.company_name = userData.company_name;
-    if (userData.phone) updateData.phone = userData.phone;
+    if (userData.name !== undefined) updateData.name = userData.name;
+    if (userData.company_name !== undefined) updateData.company_name = userData.company_name;
+    if (userData.phone !== undefined) updateData.phone = userData.phone;
+    if (userData.address !== undefined) updateData.address = userData.address;
+    if (userData.role !== undefined) updateData.role = userData.role;
+    if (userData.is_active !== undefined) updateData.is_active = userData.is_active;
 
-    // Handle address (could be string or object)
-    if (userData.address) {
-      if (typeof userData.address === "object") {
-        updateData.address = userData.address.street || userData.address;
-      } else {
-        updateData.address = userData.address;
-      }
+    // Handle address object
+    if (userData.address && typeof userData.address === "object") {
+      updateData.address = userData.address.street || userData.address;
     }
 
     // Update user
     await user.update(updateData);
-
     console.log("User updated successfully:", userId);
 
-    // Prepare response
-    const userResponse = {
-      _id: user.email,
-      _rev: `2-${user.id}`,
-      company_name: user.company_name,
-      address: user.address,
-      phone: user.phone,
-      email: user.email,
-      name: user.name,
-      company_code: user.company_code,
-      isTrial: user.isTrial,
-      isPaid: user.isPaid,
-      created_at: user.created_at,
-      modified_at: user.modified_at,
-      featuresAccess: [],
-      imgURL: `https://managekaro-documents.s3.us-west-2.amazonaws.com/${user.company_code}/default-avatar.png`,
-      base_url: "",
-      gst: 0,
-    };
+    const userResponse = buildUserResponse(user);
 
-    res.json({
-      response: {
-        status: {
-          statusCode: 200,
-          statusMessage: "User updated successfully",
-        },
-        data: {
-          user: userResponse,
-        },
-      },
-    });
+    res.json(
+      successResponse("User updated successfully", {
+        user: userResponse,
+      })
+    );
   } catch (error) {
-    console.error(" UPDATE ERROR:", error);
-    res.status(500).json({
-      response: {
-        status: {
-          statusCode: 500,
-          statusMessage: "Internal server error",
-        },
-        data: null,
-      },
-    });
+    console.error("UPDATE ERROR:", error);
+    res.status(500).json(
+      errorResponse(500, "Internal server error")
+    );
   }
 };
 
@@ -348,82 +263,114 @@ const updateUser = async (req, res) => {
 const getUser = async (req, res) => {
   try {
     const { email } = req.params;
+    
+    // SECURITY: Only allow users to access their own company data
+    const companyCode = req.user.company_code;
+    
     const user = await User.findOne({
-      where: { email },
+      where: { 
+        email,
+        company_code: companyCode
+      },
       attributes: { exclude: ["password"] },
     });
 
     if (!user) {
-      return res.status(404).json({
-        response: {
-          status: { statusCode: 404, statusMessage: "User not found" },
-          data: null,
-        },
-      });
+      return res.status(404).json(
+        errorResponse(404, "User not found")
+      );
     }
 
-    const userResponse = {
-      _id: user.email,
-      _rev: `1-${user.id}`,
-      company_name: user.company_name,
-      address: user.address,
-      phone: user.phone,
-      email: user.email,
-      name: user.name,
-      company_code: user.company_code,
-      isTrial: user.isTrial,
-      isPaid: user.isPaid,
-      created_at: user.created_at,
-      modified_at: user.modified_at,
-      featuresAccess: [],
-      imgURL: `https://managekaro-documents.s3.us-west-2.amazonaws.com/${user.company_code}/default-avatar.png`,
-      base_url: "",
-      gst: 0,
-    };
+    const userResponse = buildUserResponse(user);
 
-    res.json({
-      response: {
-        status: { statusCode: 200, statusMessage: "OK" },
-        data: { user: userResponse },
-      },
-    });
+    res.json(
+      successResponse("OK", { 
+        user: userResponse 
+      })
+    );
   } catch (error) {
-    console.error("Error:", error);
-    res.status(500).json({
-      response: {
-        status: { statusCode: 500, statusMessage: "Server error" },
-        data: null,
-      },
-    });
+    console.error("GET USER ERROR:", error);
+    res.status(500).json(
+      errorResponse(500, "Server error")
+    );
   }
 };
 
-// Get all users
+// Get all users - SECURITY FIXED
 const getAllUsers = async (req, res) => {
   try {
-    console.log("🔍 Fetching all users from database...");
+    const companyCode = req.user.company_code;
+    
+    console.log("🔍 Fetching COMPANY USERS for:", companyCode);
+
     const users = await User.findAll({
+      where: { 
+        company_code: companyCode
+      },
+      attributes: { exclude: ["password"] },
+      order: [['created_at', 'DESC']]
+    });
+
+    console.log(`✅ Found ${users.length} users in company ${companyCode}`);
+
+    const userResponses = users.map(user => buildUserResponse(user));
+
+    res.json(
+      successResponse("OK", {
+        users: userResponses,
+        total: users.length,
+      })
+    );
+  } catch (error) {
+    console.error("GET ALL USERS ERROR:", error);
+    res.status(500).json(
+      errorResponse(500, "Internal server error")
+    );
+  }
+};
+
+// Get current user profile
+const getCurrentUser = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const companyCode = req.user.company_code;
+
+    console.log("🔍 Fetching current user profile for:", userId);
+
+    const user = await User.findOne({
+      where: { 
+        id: userId,
+        company_code: companyCode
+      },
       attributes: { exclude: ["password"] },
     });
 
-    console.log(` Found ${users.length} users in database`);
+    if (!user) {
+      return res.status(404).json(
+        errorResponse(404, "User not found")
+      );
+    }
 
-    res.json({
-      success: true,
-      total: users.length,
-      users: users,
-    });
+    const userResponse = buildUserResponse(user);
+
+    res.json(
+      successResponse("OK", {
+        user: userResponse
+      })
+    );
   } catch (error) {
-    console.error("Error fetching users:", error);
-    res.status(500).json({ error: error.message });
+    console.error("GET CURRENT USER ERROR:", error);
+    res.status(500).json(
+      errorResponse(500, "Server error")
+    );
   }
 };
 
-// Export all functions
 module.exports = {
   signupAdmin,
   loginAdmin,
   updateUser,
   getUser,
   getAllUsers,
+  getCurrentUser
 };
