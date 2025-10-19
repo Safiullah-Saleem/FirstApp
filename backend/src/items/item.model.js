@@ -11,7 +11,7 @@ const Item = sequelize.define(
     },
     itemId: {
       type: DataTypes.STRING,
-      field: "itemid", // Database column is lowercase
+      field: "itemId", // Database column is camelCase
     },
     _id: {
       type: DataTypes.STRING,
@@ -34,11 +34,11 @@ const Item = sequelize.define(
     },
     costPrice: {
       type: DataTypes.DECIMAL(10, 2),
-      field: "costprice", // Database column is lowercase
+      field: "costPrice", // Database column is camelCase
     },
     companyPrice: {
       type: DataTypes.DECIMAL(10, 2),
-      field: "companyprice", // Database column is lowercase
+      field: "companyPrice", // Database column is camelCase
     },
     whole_sale_price: {
       type: DataTypes.DECIMAL(10, 2),
@@ -70,11 +70,11 @@ const Item = sequelize.define(
       type: DataTypes.STRING,
       allowNull: true,
       defaultValue: null,
-      field: "barcode", // Database column is lowercase
+      field: "barCode", // Database column is camelCase
     },
     itemCode: {
       type: DataTypes.STRING,
-      field: "itemcode", // Database column is lowercase
+      field: "itemCode", // Database column is camelCase
     },
     category: {
       type: DataTypes.STRING,
@@ -88,22 +88,22 @@ const Item = sequelize.define(
     expiryDate: {
       type: DataTypes.DATE,
       allowNull: true,
-      field: "expirydate", // Database column is lowercase
+      field: "expiryDate", // Database column is camelCase
     },
     imgURL: {
       type: DataTypes.STRING,
-      field: "imgurl", // Database column is lowercase
+      field: "imgURL", // Database column is camelCase
     },
     // ========== IMAGEKIT FIELDS ==========
     imageKitFileId: {
       type: DataTypes.STRING,
       allowNull: true,
-      field: "imagekitfileid", // Database column is lowercase
+      field: "imageKitFileId", // Database column is camelCase
     },
     imageKitFilePath: {
       type: DataTypes.STRING,
       allowNull: true,
-      field: "imagekitfilepath", // Database column is lowercase
+      field: "imageKitFilePath", // Database column is camelCase
     },
     // ========== END IMAGEKIT FIELDS ==========
     company_code: {
@@ -130,7 +130,7 @@ const Item = sequelize.define(
     weightType: {
       type: DataTypes.BOOLEAN,
       defaultValue: false,
-      field: "weighttype", // Database column is lowercase
+      field: "weightType", // Database column is camelCase
     },
     boxes: {
       type: DataTypes.INTEGER,
@@ -145,7 +145,7 @@ const Item = sequelize.define(
     totalBoxes: {
       type: DataTypes.INTEGER,
       defaultValue: 0,
-      field: "totalboxes", // Database column is lowercase
+      field: "totalBoxes", // Database column is camelCase
     },
     box: {
       type: DataTypes.BOOLEAN,
@@ -155,25 +155,25 @@ const Item = sequelize.define(
     piecesPerBox: {
       type: DataTypes.INTEGER,
       defaultValue: 0,
-      field: "piecesperbox", // Database column is lowercase
+      field: "piecesPerBox", // Database column is camelCase
     },
     pricePerPiece: {
       type: DataTypes.DECIMAL(10, 2),
-      field: "priceperpiece", // Database column is lowercase
+      field: "pricePerPiece", // Database column is camelCase
     },
     saleLabel: {
       type: DataTypes.STRING,
-      field: "salelabel", // Database column is lowercase
+      field: "saleLabel", // Database column is camelCase
     },
     batchNumber: {
       type: DataTypes.JSON,
       defaultValue: [],
-      field: "batchnumber", // Database column is lowercase
+      field: "batchNumber", // Database column is camelCase
     },
     imeiNumbers: {
       type: DataTypes.JSON,
       defaultValue: [],
-      field: "imeinumbers", // Database column is lowercase
+      field: "imeiNumbers", // Database column is camelCase
     },
     created_at: {
       type: DataTypes.BIGINT,
@@ -189,8 +189,7 @@ const Item = sequelize.define(
   {
     tableName: "items",
     timestamps: false,
-    // Use underscored option to automatically handle camelCase to snake_case conversion
-    underscored: false, // Keep false since we're using explicit field mappings
+    underscored: false, // Keep this as false since we're using explicit field mappings
     indexes: [
       {
         unique: true,
