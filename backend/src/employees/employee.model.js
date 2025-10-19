@@ -9,17 +9,20 @@ const Employee = sequelize.define(
       type: DataTypes.INTEGER,
       primaryKey: true,
       autoIncrement: true,
+      field: 'id'
     },
     employee_code: {
       type: DataTypes.STRING,
       unique: true,
+      field: 'employee_code'
     },
     username: {
       type: DataTypes.STRING,
       allowNull: false,
       validate: {
         notEmpty: true
-      }
+      },
+      field: 'username'
     },
     email: {
       type: DataTypes.STRING,
@@ -27,63 +30,77 @@ const Employee = sequelize.define(
       validate: {
         isEmail: true,
       },
+      field: 'email'
     },
     password: {
       type: DataTypes.STRING,
       allowNull: false,
+      field: 'password'
     },
     company_code: {
       type: DataTypes.STRING,
       allowNull: false,
       validate: {
         notEmpty: true
-      }
+      },
+      field: 'company_code'
     },
     company_name: {
       type: DataTypes.STRING,
       allowNull: false,
+      field: 'company_name'
     },
-    // ADDED: Proper employee fields
     phone: {
       type: DataTypes.STRING,
+      field: 'phone'
     },
     department: {
       type: DataTypes.STRING,
+      field: 'department'
     },
     position: {
       type: DataTypes.STRING,
+      field: 'position'
     },
     role: {
-      type: DataTypes.ENUM('manager', 'staff', 'supervisor', 'accountant'),
-      defaultValue: 'staff'
+      type: DataTypes.STRING,
+      defaultValue: 'staff',
+      field: 'role'
     },
     status: {
-      type: DataTypes.ENUM('active', 'inactive', 'suspended'),
-      defaultValue: 'active'
+      type: DataTypes.STRING,
+      defaultValue: 'active',
+      field: 'status'
     },
     join_date: {
-      type: DataTypes.BIGINT,
+      type: DataTypes.DATE, // CHANGED: Use DATE to match database timestamp type
+      field: 'join_date'
     },
     access: {
       type: DataTypes.JSON,
       defaultValue: ["Dashboard"],
+      field: 'access'
     },
-    ledgerRegions: {
+    ledgerregions: {
       type: DataTypes.JSON,
       defaultValue: [],
+      field: 'ledgerregions'
     },
     address: {
       type: DataTypes.TEXT,
+      field: 'address'
     },
-    imgURL: {
+    imgurl: {
       type: DataTypes.STRING,
       defaultValue: "",
+      field: 'imgurl'
     },
     base_url: {
       type: DataTypes.STRING,
       defaultValue: "",
+      field: 'base_url'
     },
-    featuresAccess: {
+    featuresaccess: {
       type: DataTypes.JSON,
       defaultValue: [
         {
@@ -100,19 +117,25 @@ const Employee = sequelize.define(
           cardWhite: "/static/media/dashboardWhite.fe5f6a4a.svg",
         },
       ],
+      field: 'featuresaccess'
     },
     created_at: {
       type: DataTypes.BIGINT,
       defaultValue: () => Math.floor(Date.now() / 1000),
+      field: 'created_at'
     },
     modified_at: {
       type: DataTypes.BIGINT,
       defaultValue: () => Math.floor(Date.now() / 1000),
+      field: 'modified_at'
     },
   },
   {
     tableName: "employees",
     timestamps: false,
+    define: {
+      underscored: false
+    },
     hooks: {
       beforeCreate: async (employee) => {
         // Generate unique employee code FIRST (before any DB operations)
@@ -132,9 +155,9 @@ const Employee = sequelize.define(
         employee.created_at = timestamp;
         employee.modified_at = timestamp;
         
-        // Set join date if not provided
+        // CHANGED: Use Date object to match DATE type (not timestamp number)
         if (!employee.join_date) {
-          employee.join_date = timestamp;
+          employee.join_date = new Date(); // Date object, not timestamp
         }
       },
       beforeUpdate: async (employee) => {

@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const { Op } = require('sequelize');
 const User = require('../user/user.model');
 const Employee = require('../employees/employee.model');
 
@@ -28,6 +29,15 @@ const authenticate = async (req, res, next) => {
     try {
       decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-fallback-secret-key');
       console.log("✅ Token decoded - ID:", decoded.id, "Type:", decoded.type, "Company:", decoded.company_code);
+      
+      // ADDED: Debug logging to see token contents
+      console.log("🔍 DECODED TOKEN DETAILS:");
+      console.log("Full decoded:", JSON.stringify(decoded, null, 2));
+      console.log("Decoded ID:", decoded.id);
+      console.log("Decoded email:", decoded.email);
+      console.log("Decoded type:", decoded.type);
+      console.log("Decoded company_code:", decoded.company_code);
+      
     } catch (jwtError) {
       console.error("❌ JWT Verification Error:", jwtError.name);
       
@@ -62,10 +72,19 @@ const authenticate = async (req, res, next) => {
 
     // Check if it's a User (company admin) or Employee
     if (decoded.type === 'employee') {
-      console.log("🔍 Looking up employee with ID:", decoded.id);
-      // Employee token
-      user = await Employee.findByPk(decoded.id, {
-        attributes: { include: ['company_code', 'email', 'username', 'employee_code', 'role', 'status'] }
+      console.log("🔍 Looking up employee with decoded data:", decoded);
+      
+      // FIXED: Try multiple lookup methods for employee
+      user = await Employee.findOne({
+        where: {
+          [Op.or]: [
+            { id: decoded.id },
+            { employee_code: decoded.id },
+            { email: decoded.email },
+            { username: decoded.username }
+          ]
+        },
+        attributes: { include: ['id', 'company_code', 'email', 'username', 'employee_code', 'role', 'status'] }
       });
       
       // Check if employee is active
@@ -82,10 +101,17 @@ const authenticate = async (req, res, next) => {
         });
       }
     } else {
-      console.log("🔍 Looking up user with ID:", decoded.id);
-      // User token (company admin - default)
-      user = await User.findByPk(decoded.id, {
-        attributes: { include: ['company_code', 'email', 'name', 'is_active'] }
+      console.log("🔍 Looking up user with decoded data:", decoded);
+      
+      // FIXED: Try multiple lookup methods for user
+      user = await User.findOne({
+        where: {
+          [Op.or]: [
+            { id: decoded.id },
+            { email: decoded.email }
+          ]
+        },
+        attributes: { include: ['id', 'company_code', 'email', 'name', 'is_active'] }
       });
       
       // Check if user is active
@@ -105,6 +131,11 @@ const authenticate = async (req, res, next) => {
 
     if (!user) {
       console.log("❌ User not found for token - ID:", decoded.id, "Type:", decoded.type);
+      console.log("❌ Attempted lookup with:", {
+        id: decoded.id,
+        email: decoded.email,
+        username: decoded.username
+      });
       return res.status(401).json({
         response: {
           status: { 
@@ -169,10 +200,10 @@ const authenticate = async (req, res, next) => {
 
 // Middleware to require admin role (only company users, not employees)
 const requireAdmin = (req, res, next) => {
-  console.log("🔒 Checking admin privileges for:", req.user.email || req.user.username);
+  console.log("🔒 Checking admin privileges for:", req.user?.email || req.user?.username);
   
-  if (req.user.type !== 'user') {
-    console.log("❌ Admin access denied - User type:", req.user.type);
+  if (!req.user || req.user.type !== 'user') {
+    console.log("❌ Admin access denied - User type:", req.user?.type);
     return res.status(403).json({
       response: {
         status: { 
@@ -191,9 +222,9 @@ const requireAdmin = (req, res, next) => {
 // Middleware to require specific employee roles
 const requireEmployeeRole = (allowedRoles) => {
   return (req, res, next) => {
-    console.log("🔒 Checking employee role - Current:", req.user.role, "Required:", allowedRoles);
+    console.log("🔒 Checking employee role - Current:", req.user?.role, "Required:", allowedRoles);
     
-    if (req.user.type !== 'employee' || !allowedRoles.includes(req.user.role)) {
+    if (!req.user || req.user.type !== 'employee' || !allowedRoles.includes(req.user.role)) {
       console.log("❌ Employee role access denied");
       return res.status(403).json({
         response: {
@@ -214,9 +245,9 @@ const requireEmployeeRole = (allowedRoles) => {
 // Middleware to check if user belongs to specific company
 const requireCompanyAccess = (companyCode) => {
   return (req, res, next) => {
-    console.log("🔒 Checking company access - User:", req.user.company_code, "Required:", companyCode);
+    console.log("🔒 Checking company access - User:", req.user?.company_code, "Required:", companyCode);
     
-    if (req.user.company_code !== companyCode) {
+    if (!req.user || req.user.company_code !== companyCode) {
       console.log("❌ Company access denied");
       return res.status(403).json({
         response: {

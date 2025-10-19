@@ -299,6 +299,17 @@ const getUser = async (req, res) => {
 // Get all users - SECURITY FIXED
 const getAllUsers = async (req, res) => {
   try {
+    console.log("=== GET ALL USERS ===");
+    console.log("User object:", req.user);
+    
+    // FIX: Check if user exists and has company_code
+    if (!req.user || !req.user.company_code) {
+      console.error("❌ User authentication missing or invalid:", req.user);
+      return res.status(400).json(
+        errorResponse(400, "User authentication missing or invalid")
+      );
+    }
+
     const companyCode = req.user.company_code;
     
     console.log("🔍 Fetching COMPANY USERS for:", companyCode);
@@ -329,14 +340,28 @@ const getAllUsers = async (req, res) => {
   }
 };
 
-// Get current user profile
+// Get current user profile - FIXED WITH DEBUGGING
 const getCurrentUser = async (req, res) => {
   try {
+    console.log("=== GET CURRENT USER PROFILE ===");
+    console.log("Full req.user object:", JSON.stringify(req.user, null, 2));
+    
     const userId = req.user.id;
     const companyCode = req.user.company_code;
 
-    console.log("🔍 Fetching current user profile for:", userId);
+    console.log("🔍 Fetching current user profile for:");
+    console.log("  - User ID:", userId);
+    console.log("  - Company Code:", companyCode);
+    console.log("  - User Email:", req.user.email);
 
+    // First, let's see what users exist in the database
+    console.log("🔍 Checking all users in database...");
+    const allUsers = await User.findAll({
+      attributes: ['id', 'email', 'company_code', 'name']
+    });
+    console.log("📊 All users in database:", allUsers.map(u => ({ id: u.id, email: u.email, company: u.company_code })));
+
+    // Now try to find the specific user
     const user = await User.findOne({
       where: { 
         id: userId,
@@ -346,10 +371,37 @@ const getCurrentUser = async (req, res) => {
     });
 
     if (!user) {
+      console.log("❌ USER NOT FOUND - Details:");
+      console.log("  - Searched for ID:", userId);
+      console.log("  - In company:", companyCode);
+      console.log("  - Available users in company:", await User.findAll({ 
+        where: { company_code: companyCode },
+        attributes: ['id', 'email', 'name'] 
+      }));
+      
+      // Try alternative lookup methods
+      console.log("🔄 Trying alternative lookup methods...");
+      
+      // Try by ID only (without company filter)
+      const userById = await User.findByPk(userId);
+      console.log("  - Lookup by ID only:", userById ? `FOUND: ${userById.email}` : "NOT FOUND");
+      
+      // Try by email
+      const userByEmail = await User.findOne({ where: { email: req.user.email } });
+      console.log("  - Lookup by email:", userByEmail ? `FOUND: ${userByEmail.email}` : "NOT FOUND");
+      
       return res.status(404).json(
-        errorResponse(404, "User not found")
+        errorResponse(404, "User profile not found")
       );
     }
+
+    console.log("✅ USER FOUND:", user.email);
+    console.log("✅ User details:", {
+      id: user.id,
+      email: user.email,
+      company_code: user.company_code,
+      name: user.name
+    });
 
     const userResponse = buildUserResponse(user);
 
@@ -359,9 +411,9 @@ const getCurrentUser = async (req, res) => {
       })
     );
   } catch (error) {
-    console.error("GET CURRENT USER ERROR:", error);
+    console.error("❌ GET CURRENT USER ERROR:", error);
     res.status(500).json(
-      errorResponse(500, "Server error")
+      errorResponse(500, "Server error: " + error.message)
     );
   }
 };

@@ -1,11 +1,24 @@
 require("dotenv").config();
 
-// Enhanced startup diagnostics
+// Enhanced startup diagnostics with timing
 console.log("🔧 Starting Backend Diagnostics...");
+const startupStartTime = Date.now();
+let lastLogTime = startupStartTime;
+
+function logStep(stepName) {
+  const now = Date.now();
+  const totalElapsed = now - startupStartTime;
+  const stepElapsed = now - lastLogTime;
+  console.log(`⏱️ [${totalElapsed}ms +${stepElapsed}ms] ${stepName}`);
+  lastLogTime = now;
+}
+
+logStep("Starting diagnostics");
 console.log(`📊 NODE_ENV: ${process.env.NODE_ENV || "not set"}`);
 console.log(`🔑 DATABASE_URL: ${process.env.DATABASE_URL ? "Set" : "Not Set"}`);
 console.log(`🌐 PORT: ${process.env.PORT || 8000}`);
 
+logStep("Loading app module");
 const app = require("./src/app");
 
 const PORT = process.env.PORT || 8000;
@@ -61,15 +74,25 @@ app.use("*", (req, res) => {
   });
 });
 
+logStep("Starting server listener");
+
 // ✅ CRITICAL: Use '0.0.0.0' for container environments
 app.listen(PORT, "0.0.0.0", () => {
+  const totalStartupTime = Date.now() - startupStartTime;
   console.log(`🚀 Server running on http://0.0.0.0:${PORT}`);
   console.log(`📊 Environment: ${process.env.NODE_ENV || "development"}`);
-  console.log(
-    `🌐 Public URL: https://devoted-education-production.up.railway.app`
-  );
+  console.log(`🌐 Public URL: https://devoted-education-production.up.railway.app`);
+  console.log(`⏱️ Total startup time: ${totalStartupTime}ms`);
   console.log(`✅ Available Endpoints:`);
   console.log(`   GET / - Root endpoint`);
   console.log(`   GET /health - Health check`);
   console.log(`   GET /api/test - Test endpoint`);
+  
+  // Critical: Log if startup took too long
+  if (totalStartupTime > 10000) { // 10 seconds
+    console.log(`⚠️ WARNING: Startup took ${totalStartupTime}ms (>10s) - Potential performance issue`);
+  }
 });
+
+// Also add this to track module loading time
+logStep("Server setup complete");
