@@ -5,22 +5,86 @@ const Ledger = require("../ledger/ledger.model");
 const Transaction = sequelize.define(
   "Transaction",
   {
-    id: { type: DataTypes.BIGINT, autoIncrement: true, primaryKey: true },
-    ledger_id: { type: DataTypes.BIGINT, allowNull: false },
-    company_code: { type: DataTypes.STRING, allowNull: false },
-    srNum: { type: DataTypes.STRING, allowNull: false },
-    date: { type: DataTypes.BIGINT, allowNull: false },
-    detail: { type: DataTypes.TEXT, allowNull: true },
-    totalAmount: { type: DataTypes.DECIMAL(18, 2), allowNull: false, defaultValue: 0 },
-    depositedAmount: { type: DataTypes.DECIMAL(18, 2), allowNull: false, defaultValue: 0 },
-    remainingAmount: { type: DataTypes.DECIMAL(18, 2), allowNull: false, defaultValue: 0 },
-    billNumber: { type: DataTypes.INTEGER, allowNull: true },
-    isReturn: { type: DataTypes.BOOLEAN, defaultValue: false },
-    type: { type: DataTypes.ENUM("invoice", "payment", "balance", "return"), allowNull: false, defaultValue: "invoice" },
-    invoiceNumber: { type: DataTypes.STRING, allowNull: true },
-    direction: { type: DataTypes.ENUM("sale", "purchase"), allowNull: false },
-    created_at: { type: DataTypes.BIGINT, defaultValue: () => Math.floor(Date.now() / 1000) },
-    modified_at: { type: DataTypes.BIGINT, defaultValue: () => Math.floor(Date.now() / 1000) },
+    id: { 
+      type: DataTypes.BIGINT, 
+      autoIncrement: true, 
+      primaryKey: true 
+    },
+    ledgerId: { 
+      type: DataTypes.BIGINT, 
+      allowNull: false,
+      field: "ledger_id" 
+    },
+    companyCode: { 
+      type: DataTypes.STRING, 
+      allowNull: false,
+      field: "company_code" 
+    },
+    srNum: { 
+      type: DataTypes.STRING, 
+      allowNull: false,
+      field: "sr_num" 
+    },
+    date: { 
+      type: DataTypes.BIGINT, 
+      allowNull: false 
+    },
+    detail: { 
+      type: DataTypes.TEXT, 
+      allowNull: true 
+    },
+    totalAmount: { 
+      type: DataTypes.DECIMAL(18, 2), 
+      allowNull: false, 
+      defaultValue: 0,
+      field: "total_amount" 
+    },
+    depositedAmount: { 
+      type: DataTypes.DECIMAL(18, 2), 
+      allowNull: false, 
+      defaultValue: 0,
+      field: "deposited_amount" 
+    },
+    remainingAmount: { 
+      type: DataTypes.DECIMAL(18, 2), 
+      allowNull: false, 
+      defaultValue: 0,
+      field: "remaining_amount" 
+    },
+    billNumber: { 
+      type: DataTypes.INTEGER, 
+      allowNull: true,
+      field: "bill_number" 
+    },
+    isReturn: { 
+      type: DataTypes.BOOLEAN, 
+      defaultValue: false,
+      field: "is_return" 
+    },
+    type: { 
+      type: DataTypes.ENUM("invoice", "payment", "balance", "return"), 
+      allowNull: false, 
+      defaultValue: "invoice" 
+    },
+    invoiceNumber: { 
+      type: DataTypes.STRING, 
+      allowNull: true,
+      field: "invoice_number" 
+    },
+    direction: { 
+      type: DataTypes.ENUM("sale", "purchase"), 
+      allowNull: false 
+    },
+    createdAt: { 
+      type: DataTypes.BIGINT, 
+      defaultValue: () => Math.floor(Date.now() / 1000),
+      field: "created_at" 
+    },
+    modifiedAt: { 
+      type: DataTypes.BIGINT, 
+      defaultValue: () => Math.floor(Date.now() / 1000),
+      field: "modified_at" 
+    },
   },
   {
     tableName: "transactions",
@@ -30,14 +94,13 @@ const Transaction = sequelize.define(
       { fields: ["ledger_id"] },
       { fields: ["date"] },
       { fields: ["direction"] },
-      { fields: ["srNum"], unique: true },
+      { fields: ["sr_num"], unique: true },
     ],
   }
 );
 
+// Associations
 Ledger.hasMany(Transaction, { foreignKey: "ledger_id" });
 Transaction.belongsTo(Ledger, { foreignKey: "ledger_id" });
 
 module.exports = Transaction;
-
-

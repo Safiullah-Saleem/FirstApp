@@ -27,11 +27,11 @@ async function recalcLedgerTotals(ledgerId, t) {
     depositedPurchaseTotal = 0;
   for (const x of txns) {
     if (x.direction === "sale") {
-      saleTotal += Number(x.remainingAmount || 0);
-      depositedSalesTotal += Number(x.depositedAmount || 0);
+      saleTotal += Number(x.remaining_amount || 0); // FIXED: remainingAmount → remaining_amount
+      depositedSalesTotal += Number(x.deposited_amount || 0); // FIXED: depositedAmount → deposited_amount
     } else if (x.direction === "purchase") {
-      purchaseTotal += Number(x.remainingAmount || 0);
-      depositedPurchaseTotal += Number(x.depositedAmount || 0);
+      purchaseTotal += Number(x.remaining_amount || 0); // FIXED: remainingAmount → remaining_amount
+      depositedPurchaseTotal += Number(x.deposited_amount || 0); // FIXED: depositedAmount → deposited_amount
     }
   }
   await Ledger.update(
@@ -61,16 +61,16 @@ exports.addSale = async (req, res) => {
       {
         ledger_id,
         company_code,
-        srNum: srNum || genSr("INV"),
+        sr_num: srNum || genSr("INV"), // FIXED: srNum → sr_num
         date: date || Math.floor(Date.now() / 1000),
         detail,
-        totalAmount,
-        depositedAmount,
-        remainingAmount,
-        billNumber,
-        isReturn: !!isReturn,
+        total_amount: totalAmount, // FIXED: totalAmount → total_amount
+        deposited_amount: depositedAmount, // FIXED: depositedAmount → deposited_amount
+        remaining_amount: remainingAmount, // FIXED: remainingAmount → remaining_amount
+        bill_number: billNumber, // FIXED: billNumber → bill_number
+        is_return: !!isReturn, // FIXED: isReturn → is_return
         type: "invoice",
-        invoiceNumber,
+        invoice_number: invoiceNumber, // FIXED: invoiceNumber → invoice_number
         direction: "sale",
       },
       { transaction: trx }
@@ -101,14 +101,14 @@ exports.addPurchase = async (req, res) => {
       {
         ledger_id,
         company_code,
-        srNum: srNum || genSr("PINV"),
+        sr_num: srNum || genSr("PINV"), // FIXED: srNum → sr_num
         date: date || Math.floor(Date.now() / 1000),
         detail,
-        totalAmount,
-        depositedAmount,
-        remainingAmount,
-        billNumber,
-        isReturn: !!isReturn,
+        total_amount: totalAmount, // FIXED: totalAmount → total_amount
+        deposited_amount: depositedAmount, // FIXED: depositedAmount → deposited_amount
+        remaining_amount: remainingAmount, // FIXED: remainingAmount → remaining_amount
+        bill_number: billNumber, // FIXED: billNumber → bill_number
+        is_return: !!isReturn, // FIXED: isReturn → is_return
         type: "invoice",
         direction: "purchase",
       },
@@ -141,7 +141,7 @@ exports.addPayment = async (req, res) => {
         company_code,
         direction: type,
         type: "invoice",
-        srNum: applyTo.length ? { [Op.in]: applyTo } : { [Op.ne]: null },
+        sr_num: applyTo.length ? { [Op.in]: applyTo } : { [Op.ne]: null }, // FIXED: srNum → sr_num
       },
       order: [["date", "ASC"]],
       transaction: trx,
@@ -150,12 +150,16 @@ exports.addPayment = async (req, res) => {
     let remainingPayment = Number(depositedAmount);
     for (const inv of invoices) {
       if (remainingPayment <= 0) break;
-      const invRemaining = Number(inv.remainingAmount || 0);
+      const invRemaining = Number(inv.remaining_amount || 0); // FIXED: remainingAmount → remaining_amount
       if (invRemaining <= 0) continue;
       const apply = Math.min(invRemaining, remainingPayment);
-      const newDeposited = Number(inv.depositedAmount || 0) + apply;
-      const newRemaining = Number(inv.totalAmount || 0) - newDeposited;
-      await inv.update({ depositedAmount: newDeposited, remainingAmount: newRemaining, modified_at: Math.floor(Date.now() / 1000) }, { transaction: trx });
+      const newDeposited = Number(inv.deposited_amount || 0) + apply; // FIXED: depositedAmount → deposited_amount
+      const newRemaining = Number(inv.total_amount || 0) - newDeposited; // FIXED: totalAmount → total_amount
+      await inv.update({ 
+        deposited_amount: newDeposited, // FIXED: depositedAmount → deposited_amount
+        remaining_amount: newRemaining, // FIXED: remainingAmount → remaining_amount
+        modified_at: Math.floor(Date.now() / 1000) 
+      }, { transaction: trx });
       remainingPayment -= apply;
     }
 
@@ -167,12 +171,12 @@ exports.addPayment = async (req, res) => {
       {
         ledger_id,
         company_code,
-        srNum: srNum || genSr("PAY"),
+        sr_num: srNum || genSr("PAY"), // FIXED: srNum → sr_num
         date: date || Math.floor(Date.now() / 1000),
         detail,
-        totalAmount: 0,
-        depositedAmount: Number(depositedAmount),
-        remainingAmount: 0,
+        total_amount: 0, // FIXED: totalAmount → total_amount
+        deposited_amount: Number(depositedAmount), // FIXED: depositedAmount → deposited_amount
+        remaining_amount: 0, // FIXED: remainingAmount → remaining_amount
         type: "payment",
         direction: type,
       },
@@ -200,10 +204,28 @@ exports.addReturn = async (req, res) => {
     if (totalAmount == null || Number(totalAmount) <= 0) return res.status(400).json(badRequest("totalAmount > 0 required"));
 
     if (originalSrNum) {
-      const original = await Transaction.findOne({ where: { ledger_id, company_code, srNum: originalSrNum, direction: type, type: "invoice" }, transaction: trx });
+      const original = await Transaction.findOne({ 
+        where: { 
+          ledger_id, 
+          company_code, 
+          sr_num: originalSrNum, // FIXED: srNum → sr_num
+          direction: type, 
+          type: "invoice" 
+        }, 
+        transaction: trx 
+      });
       if (!original) return res.status(404).json(badRequest("original invoice not found"));
-      const maxReturnable = Number(original.totalAmount || 0);
-      const alreadyReturned = (await Transaction.sum("totalAmount", { where: { ledger_id, company_code, direction: type, type: "return", detail: { [Op.like]: `%orig:${originalSrNum}%` } }, transaction: trx })) || 0;
+      const maxReturnable = Number(original.total_amount || 0); // FIXED: totalAmount → total_amount
+      const alreadyReturned = (await Transaction.sum("total_amount", { // FIXED: totalAmount → total_amount
+        where: { 
+          ledger_id, 
+          company_code, 
+          direction: type, 
+          type: "return", 
+          detail: { [Op.like]: `%orig:${originalSrNum}%` } 
+        }, 
+        transaction: trx 
+      })) || 0;
       if (Number(totalAmount) + Number(alreadyReturned) > maxReturnable) {
         throw new Error("Return amount cannot exceed original transaction amount");
       }
@@ -213,14 +235,14 @@ exports.addReturn = async (req, res) => {
       {
         ledger_id,
         company_code,
-        srNum: srNum || genSr("Return"),
+        sr_num: srNum || genSr("Return"), // FIXED: srNum → sr_num
         date: date || Math.floor(Date.now() / 1000),
         detail: originalSrNum ? `${detail || "Return"} orig:${originalSrNum}` : detail,
-        totalAmount: Number(totalAmount),
-        depositedAmount: 0,
-        remainingAmount: -Number(totalAmount),
-        billNumber,
-        isReturn: true,
+        total_amount: Number(totalAmount), // FIXED: totalAmount → total_amount
+        deposited_amount: 0, // FIXED: depositedAmount → deposited_amount
+        remaining_amount: -Number(totalAmount), // FIXED: remainingAmount → remaining_amount
+        bill_number: billNumber, // FIXED: billNumber → bill_number
+        is_return: true, // FIXED: isReturn → is_return
         type: "return",
         direction: type,
       },
@@ -235,6 +257,3 @@ exports.addReturn = async (req, res) => {
     return res.status(e.status || 500).json(serverError(e.message));
   }
 };
-
-
-
