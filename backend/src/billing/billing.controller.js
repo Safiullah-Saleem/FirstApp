@@ -2,10 +2,7 @@ const { sequelize } = require("../config/database");
 const User = require("../user/user.model");
 const Item = require("../items/item.model");
 const Bill = require("./bill.model");
-const SaleBilling = require("./salebilling.model");
-const { Op } = require("sequelize");
-
-// === CREATE OPERATIONS ===
+const Sale = require("./sale.model");
 
 // Save Bills API
 const saveBills = async (req, res) => {
@@ -148,9 +145,9 @@ const saveBills = async (req, res) => {
 
     const billId = savedBill.id;
 
-    // Insert each sold item into sales table - UPDATED to SaleBilling
+    // Insert each sold item into sales table
     for (const item of items) {
-        await SaleBilling.create(
+        await Sale.create(
           {
             bill_id: billId,
             company_code,
@@ -325,8 +322,8 @@ const saveSale = async (req, res) => {
       await processInventoryUpdateFromSale(sale, company_code, transaction);
       console.log(`Inventory updated for sale item ${sale.itemId}`);
 
-      // Save sale - UPDATED to SaleBilling
-      const savedSale = await SaleBilling.create(
+      // Save sale
+      const savedSale = await Sale.create(
         {
           company_code,
           item_id: String(sale.itemId),
@@ -399,447 +396,13 @@ const saveSale = async (req, res) => {
   }
 };
 
-// === READ OPERATIONS ===
-
-// GET ALL BILLS with pagination and filters
-const getAllBills = async (req, res) => {
-  try {
-    const { company_code } = req.user;
-    const { 
-      page = 1, 
-      limit = 20, 
-      start_date, 
-      end_date,
-      customer,
-      payment_method,
-      sort_by = 'created_at',
-      sort_order = 'DESC'
-    } = req.query;
-
-    const where = { company_code };
-    
-    // Date filter
-    if (start_date && end_date) {
-      where.date = {
-        [Op.between]: [start_date, end_date]
-      };
-    } else if (start_date) {
-      where.date = { [Op.gte]: start_date };
-    } else if (end_date) {
-      where.date = { [Op.lte]: end_date };
-    }
-
-    // Customer filter
-    if (customer) {
-      where.customer = { [Op.iLike]: `%${customer}%` };
-    }
-
-    // Payment method filter
-    if (payment_method) {
-      where.payment_method = payment_method;
-    }
-
-    const offset = (page - 1) * limit;
-
-    const { count, rows: bills } = await Bill.findAndCountAll({
-      where,
-      include: [{
-        model: SaleBilling,
-        as: 'sales',
-        attributes: ['id', 'item_id', 'name', 'quantity', 'sale_price', 'total_price']
-      }],
-      order: [[sort_by, sort_order]],
-      limit: parseInt(limit),
-      offset: parseInt(offset)
-    });
-
-    res.json({
-      success: true,
-      data: {
-        bills,
-        pagination: {
-          total: count,
-          page: parseInt(page),
-          limit: parseInt(limit),
-          totalPages: Math.ceil(count / limit)
-        }
-      }
-    });
-
-  } catch (error) {
-    console.error("GET ALL BILLS ERROR:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch bills",
-      error: error.message
-    });
-  }
-};
-
-// GET BILL BY ID
-const getBillById = async (req, res) => {
-  try {
-    const { company_code } = req.user;
-    const { id } = req.params;
-
-    const bill = await Bill.findOne({
-      where: { id, company_code },
-      include: [{
-        model: SaleBilling,
-        as: 'sales',
-        attributes: { exclude: ['created_at', 'modified_at'] }
-      }]
-    });
-
-    if (!bill) {
-      return res.status(404).json({
-        success: false,
-        message: "Bill not found"
-      });
-    }
-
-    res.json({
-      success: true,
-      data: bill
-    });
-
-  } catch (error) {
-    console.error("GET BILL BY ID ERROR:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch bill",
-      error: error.message
-    });
-  }
-};
-
-// GET ALL SALES with filters
-const getAllSales = async (req, res) => {
-  try {
-    const { company_code } = req.user;
-    const { 
-      page = 1, 
-      limit = 50,
-      start_date,
-      end_date,
-      item_id,
-      item_name
-    } = req.query;
-
-    const where = { company_code };
-    
-    // Date filter
-    if (start_date && end_date) {
-      where.date = {
-        [Op.between]: [start_date, end_date]
-      };
-    }
-
-    // Item filters
-    if (item_id) {
-      where.item_id = item_id;
-    }
-    if (item_name) {
-      where.name = { [Op.iLike]: `%${item_name}%` };
-    }
-
-    const offset = (page - 1) * limit;
-
-    const { count, rows: sales } = await SaleBilling.findAndCountAll({
-      where,
-      include: [{
-        model: Bill,
-        as: 'bill',
-        attributes: ['id', 'bill_number', 'customer', 'date']
-      }],
-      order: [['created_at', 'DESC']],
-      limit: parseInt(limit),
-      offset: parseInt(offset)
-    });
-
-    // Calculate summary
-    const totalRevenue = await SaleBilling.sum('total_price', { where });
-    const totalQuantity = await SaleBilling.sum('quantity', { where });
-
-    res.json({
-      success: true,
-      data: {
-        sales,
-        summary: {
-          totalRevenue: totalRevenue || 0,
-          totalQuantity: totalQuantity || 0,
-          totalSales: count
-        },
-        pagination: {
-          total: count,
-          page: parseInt(page),
-          limit: parseInt(limit),
-          totalPages: Math.ceil(count / limit)
-        }
-      }
-    });
-
-  } catch (error) {
-    console.error("GET ALL SALES ERROR:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch sales",
-      error: error.message
-    });
-  }
-};
-
-// GET SALES REPORT (Summary)
-const getSalesReport = async (req, res) => {
-  try {
-    const { company_code } = req.user;
-    const { start_date, end_date, group_by = 'daily' } = req.query;
-
-    const where = { company_code };
-    
-    if (start_date && end_date) {
-      where.date = { [Op.between]: [start_date, end_date] };
-    }
-
-    let groupQuery, orderQuery;
-    
-    switch (group_by) {
-      case 'daily':
-        groupQuery = 'date';
-        orderQuery = 'date';
-        break;
-      case 'monthly':
-        groupQuery = sequelize.fn('DATE_TRUNC', 'month', sequelize.col('date'));
-        orderQuery = sequelize.fn('DATE_TRUNC', 'month', sequelize.col('date'));
-        break;
-      case 'item':
-        groupQuery = 'item_id';
-        orderQuery = 'total_revenue';
-        break;
-      default:
-        groupQuery = 'date';
-        orderQuery = 'date';
-    }
-
-    const report = await SaleBilling.findAll({
-      where,
-      attributes: [
-        groupQuery,
-        [sequelize.fn('COUNT', sequelize.col('id')), 'total_sales'],
-        [sequelize.fn('SUM', sequelize.col('quantity')), 'total_quantity'],
-        [sequelize.fn('SUM', sequelize.col('total_price')), 'total_revenue'],
-        [sequelize.fn('SUM', sequelize.col('total_profit')), 'total_profit']
-      ],
-      group: [groupQuery],
-      order: [[sequelize.literal(orderQuery), 'DESC']],
-      raw: true
-    });
-
-    res.json({
-      success: true,
-      data: {
-        report,
-        period: { start_date, end_date },
-        group_by
-      }
-    });
-
-  } catch (error) {
-    console.error("SALES REPORT ERROR:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to generate sales report",
-      error: error.message
-    });
-  }
-};
-
-// === UPDATE OPERATIONS ===
-
-// UPDATE BILL
-const updateBill = async (req, res) => {
-  const transaction = await sequelize.transaction();
-  try {
-    const { company_code } = req.user;
-    const { id } = req.params;
-    const updateData = req.body;
-
-    const bill = await Bill.findOne({
-      where: { id, company_code },
-      transaction
-    });
-
-    if (!bill) {
-      await transaction.rollback();
-      return res.status(404).json({
-        success: false,
-        message: "Bill not found"
-      });
-    }
-
-    // Update bill
-    await bill.update(updateData, { transaction });
-
-    await transaction.commit();
-
-    res.json({
-      success: true,
-      message: "Bill updated successfully",
-      data: bill
-    });
-
-  } catch (error) {
-    await transaction.rollback();
-    console.error("UPDATE BILL ERROR:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to update bill",
-      error: error.message
-    });
-  }
-};
-
-// UPDATE SALE
-const updateSale = async (req, res) => {
-  const transaction = await sequelize.transaction();
-  try {
-    const { company_code } = req.user;
-    const { id } = req.params;
-    const updateData = req.body;
-
-    const sale = await SaleBilling.findOne({
-      where: { id, company_code },
-      transaction
-    });
-
-    if (!sale) {
-      await transaction.rollback();
-      return res.status(404).json({
-        success: false,
-        message: "Sale record not found"
-      });
-    }
-
-    await sale.update(updateData, { transaction });
-    await transaction.commit();
-
-    res.json({
-      success: true,
-      message: "Sale updated successfully",
-      data: sale
-    });
-
-  } catch (error) {
-    await transaction.rollback();
-    console.error("UPDATE SALE ERROR:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to update sale",
-      error: error.message
-    });
-  }
-};
-
-// === DELETE OPERATIONS ===
-
-// DELETE BILL (and associated sales)
-const deleteBill = async (req, res) => {
-  const transaction = await sequelize.transaction();
-  try {
-    const { company_code } = req.user;
-    const { id } = req.params;
-
-    const bill = await Bill.findOne({
-      where: { id, company_code },
-      include: [{
-        model: SaleBilling,
-        as: 'sales'
-      }],
-      transaction
-    });
-
-    if (!bill) {
-      await transaction.rollback();
-      return res.status(404).json({
-        success: false,
-        message: "Bill not found"
-      });
-    }
-
-    // Delete associated sales first
-    if (bill.sales && bill.sales.length > 0) {
-      await SaleBilling.destroy({
-        where: { bill_id: id },
-        transaction
-      });
-    }
-
-    // Delete bill
-    await bill.destroy({ transaction });
-    await transaction.commit();
-
-    res.json({
-      success: true,
-      message: "Bill and associated sales deleted successfully"
-    });
-
-  } catch (error) {
-    await transaction.rollback();
-    console.error("DELETE BILL ERROR:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to delete bill",
-      error: error.message
-    });
-  }
-};
-
-// DELETE SALE
-const deleteSale = async (req, res) => {
-  const transaction = await sequelize.transaction();
-  try {
-    const { company_code } = req.user;
-    const { id } = req.params;
-
-    const sale = await SaleBilling.findOne({
-      where: { id, company_code },
-      transaction
-    });
-
-    if (!sale) {
-      await transaction.rollback();
-      return res.status(404).json({
-        success: false,
-        message: "Sale record not found"
-      });
-    }
-
-    await sale.destroy({ transaction });
-    await transaction.commit();
-
-    res.json({
-      success: true,
-      message: "Sale deleted successfully"
-    });
-
-  } catch (error) {
-    await transaction.rollback();
-    console.error("DELETE SALE ERROR:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to delete sale",
-      error: error.message
-    });
-  }
-};
-
-// === INVENTORY HELPERS ===
+// === Inventory Helpers ===
 const processInventoryUpdate = async (item, company_code, transaction) => {
   console.log("Processing inventory update for item:", item.itemId);
 
   const dbItem = await Item.findOne({
     where: {
-      itemId: String(item.itemId),
+      itemId: String(item.itemId), // Convert to string to match database type
       company_code,
     },
     transaction,
@@ -858,12 +421,16 @@ const processInventoryUpdate = async (item, company_code, transaction) => {
   }
 };
 
-const processInventoryUpdateFromSale = async (sale, company_code, transaction) => {
+const processInventoryUpdateFromSale = async (
+  sale,
+  company_code,
+  transaction
+) => {
   console.log("Processing inventory update for sale item:", sale.itemId);
 
   const dbItem = await Item.findOne({
     where: {
-      itemId: String(sale.itemId),
+      itemId: String(sale.itemId), // Convert to string to match database type
       company_code,
     },
     transaction,
@@ -989,21 +556,6 @@ const processImeiSale = async (dbItem, selectedImei, transaction) => {
 };
 
 module.exports = {
-  // CREATE
   saveBills,
   saveSale,
-  
-  // READ
-  getAllBills,
-  getBillById,
-  getAllSales,
-  getSalesReport,
-  
-  // UPDATE
-  updateBill,
-  updateSale,
-  
-  // DELETE
-  deleteBill,
-  deleteSale
 };

@@ -14,40 +14,15 @@ const transactionRoutes = require("./transaction/transaction.routes");
 console.log("🟢 Loading item routes...");
 let itemRoutes;
 try {
-  itemRoutes = require("./items/item.routes");
+  itemRoutes = require("./items/item.routes"); // ✅ FIXED: Assign to existing variable
   console.log("✅ Item routes loaded successfully");
 } catch (error) {
   console.error("❌ Error loading item routes:", error.message);
-  itemRoutes = express.Router();
+  // Don't exit immediately - allow other routes to work
+  itemRoutes = express.Router(); // Fallback empty router
   itemRoutes.get("*", (req, res) => {
     res.status(503).json({ error: "Item routes temporarily unavailable" });
   });
-}
-
-// ✅ NEW: Load Bank, Cash, Sale routes if they exist
-let bankRoutes, cashRoutes, saleRoutes;
-try {
-  bankRoutes = require("./bank/bank.account.routes");
-  console.log("✅ Bank routes loaded successfully");
-} catch (error) {
-  console.log("ℹ️ Bank routes not found, continuing without them...");
-  bankRoutes = express.Router();
-}
-
-try {
-  cashRoutes = require("./cash/cash.routes");
-  console.log("✅ Cash routes loaded successfully");
-} catch (error) {
-  console.log("ℹ️ Cash routes not found, continuing without them...");
-  cashRoutes = express.Router();
-}
-
-try {
-  saleRoutes = require("./sale/sale.routes");
-  console.log("✅ Sale routes loaded successfully");
-} catch (error) {
-  console.log("ℹ️ Sale routes not found, continuing without them...");
-  saleRoutes = express.Router();
 }
 
 const app = express();
@@ -83,6 +58,7 @@ app.use((req, res, next) => {
 // ✅ IMPROVED Database connection test (non-blocking)
 testConnection().catch((error) => {
   console.error("❌ Database connection test failed:", error.message);
+  // Don't crash the app - continue without database
 });
 
 // Routes
@@ -93,11 +69,6 @@ app.use("/api/items", itemRoutes);
 app.use("/api/billing", billingRoutes);
 app.use("/api/ledgers", ledgerRoutes);
 app.use("/api/transactions", transactionRoutes);
-
-// ✅ NEW: Add Bank, Cash, Sale routes
-app.use("/api/banks", bankRoutes);
-app.use("/api/cash", cashRoutes);
-app.use("/api/sales", saleRoutes);
 
 // ✅ ADDED Pre-flight OPTIONS handler
 app.options("*", cors());
@@ -125,9 +96,6 @@ app.get("/", (req, res) => {
       "/api/billing",
       "/api/ledgers",
       "/api/transactions",
-      "/api/banks",
-      "/api/cash", 
-      "/api/sales",
       "/api/debug-items",
       "/health",
     ],
@@ -195,6 +163,62 @@ app.use((req, res) => {
   });
 });
 
-// ✅ REMOVED server startup code from here
-// Only export the Express app
 module.exports = app;
+
+// ✅ IMPROVED SERVER STARTUP - Only start if not in test environment
+if (require.main === module && process.env.NODE_ENV !== "test") {
+  const PORT = process.env.PORT || 8000;
+  const HOST = "0.0.0.0";
+
+  const server = app.listen(PORT, HOST, () => {
+    console.log(`🚀 Server running on http://${HOST}:${PORT}`);
+    console.log(`📊 Environment: ${process.env.NODE_ENV || "development"}`);
+    console.log("✅ All routes loaded and application is ready");
+    console.log(
+      `🌐 Public URL: https://devoted-education-production.up.railway.app`
+    );
+    console.log(
+      `🔍 Health check: https://devoted-education-production.up.railway.app/health`
+    );
+  });
+
+  // ✅ ENHANCED Graceful shutdown for Railway
+  const gracefulShutdown = (signal) => {
+    console.log(`🛑 Received ${signal}, shutting down gracefully...`);
+    server.close((err) => {
+      if (err) {
+        console.error("❌ Error during shutdown:", err);
+        process.exit(1);
+      }
+      console.log("✅ HTTP server closed successfully");
+
+      // Close database connections if needed
+      if (typeof getConnectionHealth().close === "function") {
+        getConnectionHealth().close();
+      }
+
+      console.log("👋 Shutdown completed");
+      process.exit(0);
+    });
+
+    // Force close after 10 seconds
+    setTimeout(() => {
+      console.log("💥 Forcing shutdown after timeout");
+      process.exit(1);
+    }, 10000);
+  };
+
+  process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+  process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+
+  // Handle uncaught exceptions
+  process.on("uncaughtException", (error) => {
+    console.error("💥 Uncaught Exception:", error);
+    gracefulShutdown("UNCAUGHT_EXCEPTION");
+  });
+
+  process.on("unhandledRejection", (reason, promise) => {
+    console.error("💥 Unhandled Rejection at:", promise, "reason:", reason);
+    gracefulShutdown("UNHANDLED_REJECTION");
+  });
+}

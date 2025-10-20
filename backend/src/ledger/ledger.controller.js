@@ -1,438 +1,131 @@
 const { Op } = require("sequelize");
 const Ledger = require("./ledger.model");
 const Transaction = require("../transaction/transaction.model");
-const Bank = require("../bank/bank.account.model");
-const { sequelize } = require("../config/database");
+const { ok, badRequest, serverError } = require("../utils/response");
 
-// CREATE LEDGER
-exports.createLedger = async (req, res) => {
-  try {
-    const { company_code } = req.user;
-    const { name, type, opening_balance, contact_number, email, address } = req.body;
-
-    if (!name || !type) {
-      return res.status(400).json({
-        success: false,
-        message: "Name and type are required"
-      });
-    }
-
-    // Check for duplicate ledger name in company
-    const existingLedger = await Ledger.findOne({
-      where: { company_code, name }
-    });
-
-    if (existingLedger) {
-      return res.status(400).json({
-        success: false,
-        message: "Ledger with this name already exists"
-      });
-    }
-
-    const ledger = await Ledger.create({
-      company_code,
-      name,
-      type,
-      opening_balance: opening_balance || 0,
-      current_balance: opening_balance || 0,
-      contact_number,
-      email,
-      address
-    });
-
-    res.status(201).json({
-      success: true,
-      message: "Ledger created successfully",
-      data: ledger
-    });
-
-  } catch (error) {
-    console.error("Create Ledger Error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Internal server error"
-    });
+function validateCompanyAccess(company_code, user_company) {
+  if (company_code !== user_company) {
+    const err = new Error("Unauthorized access to company data");
+    err.status = 401;
+    throw err;
   }
-};
+}
 
-// GET ALL LEDGERS WITH TRANSACTIONS AND BANKS
-exports.getAllLedgers = async (req, res) => {
+exports.getByCompany = async (req, res) => {
   try {
-    const { company_code } = req.user;
-    const { page = 1, limit = 10, type, search, include_banks = false } = req.query;
+    const { company_code } = req.query;
+    let { ledgerRegions = [], next_page_token } = req.query;
+    if (!company_code) return res.status(400).json(badRequest("company_code required"));
 
+    validateCompanyAccess(company_code, company_code);
+
+    const limit = 20;
     const where = { company_code };
-    
-    if (type) where.type = type;
-    if (search) {
-      where.name = { [Op.iLike]: `%${search}%` };
+    if (typeof ledgerRegions === "string") ledgerRegions = [ledgerRegions];
+    if (Array.isArray(ledgerRegions) && ledgerRegions.length) {
+      where.region = { [Op.in]: ledgerRegions };
     }
 
-    const offset = (page - 1) * limit;
-
-    const include = [{
-      model: Transaction,
-      as: 'transactions',
-      attributes: ['id', 'amount', 'type', 'created_at'],
-      limit: 5,
-      order: [['created_at', 'DESC']]
-    }];
-
-    // ✅ ADD BANK INCLUSION IF REQUESTED
-    if (include_banks === 'true') {
-      include.push({
-        model: Bank,
-        as: 'banks',
-        attributes: ['id', 'bank_name', 'account_number', 'current_balance', 'is_active']
-      });
-    }
-
-    const { count, rows: ledgers } = await Ledger.findAndCountAll({
-      where,
-      include,
-      order: [['name', 'ASC']],
-      limit: parseInt(limit),
-      offset: parseInt(offset)
-    });
-
-    res.json({
-      success: true,
-      data: {
-        ledgers,
-        pagination: {
-          total: count,
-          page: parseInt(page),
-          limit: parseInt(limit),
-          totalPages: Math.ceil(count / limit)
-        }
-      }
-    });
-
-  } catch (error) {
-    console.error("Get Ledgers Error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Internal server error"
-    });
-  }
-};
-
-// GET LEDGER DETAILS WITH FULL TRANSACTION HISTORY AND BANKS
-exports.getLedgerDetails = async (req, res) => {
-  try {
-    const { company_code } = req.user;
-    const { id } = req.params;
-    const { page = 1, limit = 20 } = req.query;
-
-    const offset = (page - 1) * limit;
-
-    const ledger = await Ledger.findOne({
-      where: { id, company_code },
-      include: [{
-        model: Bank,
-        as: 'banks',
-        attributes: ['id', 'bank_name', 'account_number', 'current_balance', 'account_type', 'is_active']
-      }]
-    });
-
-    if (!ledger) {
-      return res.status(404).json({
-        success: false,
-        message: "Ledger not found"
-      });
-    }
-
-    const { count, rows: transactions } = await Transaction.findAndCountAll({
-      where: { ledger_id: id },
-      order: [['created_at', 'DESC']],
-      limit: parseInt(limit),
-      offset: parseInt(offset)
-    });
-
-    res.json({
-      success: true,
-      data: {
-        ledger,
-        transactions: {
-          items: transactions,
-          pagination: {
-            total: count,
-            page: parseInt(page),
-            limit: parseInt(limit),
-            totalPages: Math.ceil(count / limit)
-          }
-        }
-      }
-    });
-
-  } catch (error) {
-    console.error("Get Ledger Details Error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Internal server error"
-    });
-  }
-};
-
-// GET LEDGER WITH BANK ACCOUNTS (SPECIFIC FOR BANK OPERATIONS)
-exports.getLedgerWithBanks = async (req, res) => {
-  try {
-    const { company_code } = req.user;
-    const { id } = req.params;
-
-    const ledger = await Ledger.findOne({
-      where: { id, company_code },
-      include: [{
-        model: Bank,
-        as: 'banks',
-        attributes: { exclude: ['created_at', 'modified_at'] },
-        where: { is_active: true } // Only active banks
-      }]
-    });
-
-    if (!ledger) {
-      return res.status(404).json({
-        success: false,
-        message: "Ledger not found"
-      });
-    }
-
-    // Calculate total bank balance for this ledger
-    const totalBankBalance = await Bank.sum('current_balance', {
-      where: { 
-        ledger_id: id, 
-        company_code,
-        is_active: true 
-      }
-    });
-
-    res.json({
-      success: true,
-      data: {
-        ledger,
-        bank_summary: {
-          total_bank_balance: totalBankBalance || 0,
-          bank_count: ledger.banks ? ledger.banks.length : 0
-        }
-      }
-    });
-
-  } catch (error) {
-    console.error("Get Ledger With Banks Error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Internal server error"
-    });
-  }
-};
-
-// GET LEDGERS BY TYPE WITH BANK SUMMARY
-exports.getLedgersByTypeWithBanks = async (req, res) => {
-  try {
-    const { company_code } = req.user;
-    const { type } = req.params;
-
+    const cursor = next_page_token ? { id: { [Op.gt]: Number(next_page_token) } } : {};
     const ledgers = await Ledger.findAll({
-      where: { 
-        company_code, 
-        type,
-        is_active: true 
-      },
-      include: [{
-        model: Bank,
-        as: 'banks',
-        attributes: ['id', 'bank_name', 'account_number', 'current_balance'],
-        where: { is_active: true },
-        required: false // Left join to include ledgers without banks
-      }],
-      order: [['name', 'ASC']]
+      where: { ...where, ...cursor },
+      limit: limit + 1,
+      order: [["id", "ASC"]],
     });
 
-    // Calculate summary
-    const summary = {
-      total_ledgers: ledgers.length,
-      total_bank_accounts: 0,
-      total_bank_balance: 0
-    };
+    let nextToken = "";
+    if (ledgers.length > limit) {
+      nextToken = String(ledgers[limit - 1].id);
+      ledgers.length = limit;
+    }
 
-    ledgers.forEach(ledger => {
-      if (ledger.banks) {
-        summary.total_bank_accounts += ledger.banks.length;
-        ledger.banks.forEach(bank => {
-          summary.total_bank_balance += parseFloat(bank.current_balance || 0);
-        });
-      }
-    });
+    const ids = ledgers.map((l) => l.id);
+    let salesTotal = 0;
+    let purchasesTotal = 0;
+    if (ids.length) {
+      const txAgg = await Transaction.findAll({
+        attributes: ["ledger_id", "direction", "remainingAmount"],
+        where: { ledger_id: { [Op.in]: ids } },
+      });
+      txAgg.forEach((t) => {
+        if (t.direction === "sale") salesTotal += Number(t.remainingAmount || 0);
+        if (t.direction === "purchase") purchasesTotal += Number(t.remainingAmount || 0);
+      });
+    }
 
-    res.json({
-      success: true,
-      data: {
+    return res.json(
+      ok({
+        current_page_token: String(ledgers[0]?.id || ""),
+        next_page_token: nextToken,
+        salesTotal,
+        purchasesTotal,
         ledgers,
-        summary
-      }
-    });
-
-  } catch (error) {
-    console.error("Get Ledgers By Type With Banks Error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Internal server error"
-    });
+      })
+    );
+  } catch (e) {
+    const code = e.status || 500;
+    return res.status(code).json(serverError(e.message));
   }
 };
 
-// UPDATE LEDGER
-exports.updateLedger = async (req, res) => {
+exports.saveLedger = async (req, res) => {
   try {
-    const { company_code } = req.user;
-    const { id } = req.params;
-    const updateData = req.body;
+    const { ledger } = (req.body && req.body.data) || {};
+    if (!ledger) return res.status(400).json(badRequest("ledger required"));
+    const { name, company_code, ledgerType } = ledger;
+    if (!name || !company_code || !ledgerType) {
+      return res.status(400).json(badRequest("name, company_code, ledgerType required"));
+    }
+    validateCompanyAccess(company_code, company_code);
 
-    const ledger = await Ledger.findOne({ where: { id, company_code } });
-
-    if (!ledger) {
-      return res.status(404).json({
-        success: false,
-        message: "Ledger not found"
+    let saved;
+    if (ledger._id) {
+      saved = await Ledger.findByPk(ledger._id);
+      if (!saved) return res.status(404).json(badRequest("ledger not found"));
+      await saved.update({ ...ledger, modified_at: Math.floor(Date.now() / 1000) });
+    } else {
+      saved = await Ledger.create({
+        name: ledger.name,
+        company_code: ledger.company_code,
+        ledgerType: ledger.ledgerType,
+        address: ledger.address,
+        region: ledger.region,
+        phoneNo: ledger.phoneNo,
+        dueDate: ledger.dueDate,
       });
     }
-
-    // Check for duplicate name if changing
-    if (updateData.name && updateData.name !== ledger.name) {
-      const existing = await Ledger.findOne({
-        where: { company_code, name: updateData.name, id: { [Op.ne]: id } }
-      });
-
-      if (existing) {
-        return res.status(400).json({
-          success: false,
-          message: "Ledger with this name already exists"
-        });
-      }
-    }
-
-    await ledger.update(updateData);
-
-    res.json({
-      success: true,
-      message: "Ledger updated successfully",
-      data: ledger
-    });
-
-  } catch (error) {
-    console.error("Update Ledger Error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Internal server error"
-    });
+    return res.json(ok({ ledger: saved }));
+  } catch (e) {
+    const code = e.status || 500;
+    return res.status(code).json(serverError(e.message));
   }
 };
 
-// DELETE LEDGER (WITH BANK CHECK)
 exports.deleteLedger = async (req, res) => {
-  const transaction = await sequelize.transaction();
   try {
-    const { company_code } = req.user;
-    const { id } = req.params;
+    const { ledger_id, company_code } = (req.body && req.body.data) || req.query || {};
+    if (!ledger_id || !company_code) return res.status(400).json(badRequest("ledger_id, company_code required"));
+    validateCompanyAccess(company_code, company_code);
 
-    const ledger = await Ledger.findOne({
-      where: { id, company_code },
-      include: [{
-        model: Bank,
-        as: 'banks'
-      }],
-      transaction
-    });
+    const ledger = await Ledger.findByPk(ledger_id);
+    if (!ledger) return res.status(404).json(badRequest("ledger not found"));
 
-    if (!ledger) {
-      await transaction.rollback();
-      return res.status(404).json({
-        success: false,
-        message: "Ledger not found"
-      });
+    if (
+      Number(ledger.saleTotal) !== 0 ||
+      Number(ledger.purchaseTotal) !== 0 ||
+      Number(ledger.depositedSalesTotal) !== 0 ||
+      Number(ledger.depositedPurchaseTotal) !== 0
+    ) {
+      return res.status(400).json(badRequest("Cannot delete ledger with non-zero balances"));
     }
 
-    // Check if ledger has banks
-    if (ledger.banks && ledger.banks.length > 0) {
-      await transaction.rollback();
-      return res.status(400).json({
-        success: false,
-        message: "Cannot delete ledger with associated bank accounts. Delete bank accounts first."
-      });
-    }
-
-    // Check if ledger has transactions
-    const transactionCount = await Transaction.count({
-      where: { ledger_id: id },
-      transaction
-    });
-
-    if (transactionCount > 0) {
-      await transaction.rollback();
-      return res.status(400).json({
-        success: false,
-        message: "Cannot delete ledger with existing transactions"
-      });
-    }
-
-    await ledger.destroy({ transaction });
-    await transaction.commit();
-
-    res.json({
-      success: true,
-      message: "Ledger deleted successfully"
-    });
-
-  } catch (error) {
-    await transaction.rollback();
-    console.error("Delete Ledger Error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Internal server error"
-    });
+    await Transaction.destroy({ where: { ledger_id: ledger.id } });
+    await ledger.destroy();
+    return res.json(ok({}));
+  } catch (e) {
+    const code = e.status || 500;
+    return res.status(code).json(serverError(e.message));
   }
 };
 
-// GET LEDGER SUMMARY WITH BANKS
-exports.getLedgerSummary = async (req, res) => {
-  try {
-    const { company_code } = req.user;
 
-    // Get ledger counts by type
-    const ledgerCounts = await Ledger.findAll({
-      where: { company_code },
-      attributes: [
-        'type',
-        [sequelize.fn('COUNT', sequelize.col('id')), 'count'],
-        [sequelize.fn('SUM', sequelize.col('current_balance')), 'total_balance']
-      ],
-      group: ['type'],
-      raw: true
-    });
-
-    // Get bank summary
-    const bankSummary = await Bank.findAll({
-      where: { company_code, is_active: true },
-      attributes: [
-        [sequelize.fn('COUNT', sequelize.col('id')), 'total_banks'],
-        [sequelize.fn('SUM', sequelize.col('current_balance')), 'total_bank_balance']
-      ],
-      raw: true
-    });
-
-    res.json({
-      success: true,
-      data: {
-        ledger_summary: ledgerCounts,
-        bank_summary: bankSummary[0] || { total_banks: 0, total_bank_balance: 0 }
-      }
-    });
-
-  } catch (error) {
-    console.error("Get Ledger Summary Error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Internal server error"
-    });
-  }
-};

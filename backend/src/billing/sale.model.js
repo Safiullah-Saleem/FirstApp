@@ -1,8 +1,8 @@
 const { DataTypes } = require("sequelize");
 const { sequelize } = require("../config/database");
 
-const SaleBilling = sequelize.define(
-  "SaleBilling",
+const Sale = sequelize.define(
+  "Sale",
   {
     id: {
       type: DataTypes.INTEGER,
@@ -19,6 +19,10 @@ const SaleBilling = sequelize.define(
     company_code: {
       type: DataTypes.STRING(10),
       allowNull: false,
+      references: {
+        model: 'users',
+        key: 'company_code'
+      }
     },
     item_id: {
       type: DataTypes.STRING(50),
@@ -117,7 +121,7 @@ const SaleBilling = sequelize.define(
     },
   },
   {
-    tableName: "sales", // Keep same table name for existing data
+    tableName: "sales",
     timestamps: false,
     indexes: [
       {
@@ -138,19 +142,11 @@ const SaleBilling = sequelize.define(
       },
     ],
     hooks: {
-      beforeUpdate: (saleBilling) => {
-        saleBilling.modified_at = Math.floor(Date.now() / 1000);
+      beforeUpdate: (sale) => {
+        sale.modified_at = Math.floor(Date.now() / 1000);
       },
     },
   }
 );
 
-// Associations
-SaleBilling.associate = function(models) {
-  SaleBilling.belongsTo(models.Bill, {
-    foreignKey: 'bill_id',
-    as: 'bill'
-  });
-};
-
-module.exports = SaleBilling;
+module.exports = Sale;
