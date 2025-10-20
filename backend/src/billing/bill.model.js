@@ -12,10 +12,6 @@ const Bill = sequelize.define(
     company_code: {
       type: DataTypes.STRING(10),
       allowNull: false,
-      references: {
-        model: 'users',
-        key: 'company_code'
-      }
     },
     bill_number: {
       type: DataTypes.INTEGER,
@@ -137,5 +133,13 @@ const Bill = sequelize.define(
     },
   }
 );
+
+// ✅ UPDATED ASSOCIATION: Change from Sale to SaleBilling
+Bill.associate = function(models) {
+  Bill.hasMany(models.SaleBilling, {
+    foreignKey: 'bill_id',
+    as: 'sales'
+  });
+};
 
 module.exports = Bill;

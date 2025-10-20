@@ -1,11 +1,17 @@
 const express = require("express");
-const { addSale, addPurchase, addPayment, addReturn } = require("./transaction.controller");
+const {
+  createTransaction,
+  getAllTransactions,
+  getTransactionById,
+  deleteTransaction
+} = require("./transaction.controller");
 
 const router = express.Router();
 
-router.post("/addSale", addSale);
-router.post("/addPurchase", addPurchase);
-router.post("/addPayment", addPayment);
-router.post("/addReturn", addReturn);
+// Transaction Routes
+router.post("/", createTransaction);
+router.get("/", getAllTransactions);
+router.get("/:id", getTransactionById);
+router.delete("/:id", deleteTransaction);
 
 module.exports = router;

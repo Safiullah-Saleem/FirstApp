@@ -1,98 +1,72 @@
 require("dotenv").config();
-
-// Enhanced startup diagnostics with timing
-console.log("🔧 Starting Backend Diagnostics...");
-const startupStartTime = Date.now();
-let lastLogTime = startupStartTime;
-
-function logStep(stepName) {
-  const now = Date.now();
-  const totalElapsed = now - startupStartTime;
-  const stepElapsed = now - lastLogTime;
-  console.log(`⏱️ [${totalElapsed}ms +${stepElapsed}ms] ${stepName}`);
-  lastLogTime = now;
-}
-
-logStep("Starting diagnostics");
-console.log(`📊 NODE_ENV: ${process.env.NODE_ENV || "not set"}`);
-console.log(`🔑 DATABASE_URL: ${process.env.DATABASE_URL ? "Set" : "Not Set"}`);
-console.log(`🌐 PORT: ${process.env.PORT || 8000}`);
-
-logStep("Loading app module");
 const app = require("./src/app");
+const { closeConnection } = require("./src/config/database");
 
 const PORT = process.env.PORT || 8000;
+const HOST = "0.0.0.0";
 
-// Add basic root route if not in app.js
-app.get("/", (req, res) => {
-  res.json({
-    status: "backend-running",
-    message: "Server is working!",
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || "development",
-    service: "backend",
-  });
-});
+console.log("🚀 Starting server...");
+console.log(`📊 Environment: ${process.env.NODE_ENV || "development"}`);
 
-// Add health check endpoint
-app.get("/health", (req, res) => {
-  res.json({
-    status: "healthy",
-    backend: "running",
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-  });
-});
-
-// Add a test API endpoint
-app.get("/api/test", (req, res) => {
-  res.json({
-    success: true,
-    message: "Backend API is working!",
-    data: { service: "backend", status: "operational" },
-  });
-});
-
-// Enhanced error handling
-app.use((error, req, res, next) => {
-  console.error("💥 Server Error:", error);
-  res.status(500).json({
-    error: "Internal server error",
-    message: error.message,
-    timestamp: new Date().toISOString(),
-  });
-});
-
-// 404 handler
-app.use("*", (req, res) => {
-  console.log(`❌ 404 - Route not found: ${req.originalUrl}`);
-  res.status(404).json({
-    error: "Route not found",
-    path: req.originalUrl,
-    method: req.method,
-    timestamp: new Date().toISOString(),
-  });
-});
-
-logStep("Starting server listener");
-
-// ✅ CRITICAL: Use '0.0.0.0' for container environments
-app.listen(PORT, "0.0.0.0", () => {
-  const totalStartupTime = Date.now() - startupStartTime;
-  console.log(`🚀 Server running on http://0.0.0.0:${PORT}`);
-  console.log(`📊 Environment: ${process.env.NODE_ENV || "development"}`);
+const server = app.listen(PORT, HOST, () => {
+  console.log(`🎯 Server running on http://${HOST}:${PORT}`);
+  console.log("✅ All routes loaded and application is ready");
   console.log(`🌐 Public URL: https://devoted-education-production.up.railway.app`);
-  console.log(`⏱️ Total startup time: ${totalStartupTime}ms`);
-  console.log(`✅ Available Endpoints:`);
-  console.log(`   GET / - Root endpoint`);
-  console.log(`   GET /health - Health check`);
-  console.log(`   GET /api/test - Test endpoint`);
-  
-  // Critical: Log if startup took too long
-  if (totalStartupTime > 10000) { // 10 seconds
-    console.log(`⚠️ WARNING: Startup took ${totalStartupTime}ms (>10s) - Potential performance issue`);
-  }
+  console.log(`🔍 Health check: https://devoted-education-production.up.railway.app/health`);
+  console.log(`📋 Available APIs: Users, Employees, Company, Items, Billing, Ledgers, Transactions, Banks, Cash, Sales`);
 });
 
-// Also add this to track module loading time
-logStep("Server setup complete");
+// ✅ ENHANCED Graceful shutdown for Railway
+const gracefulShutdown = (signal) => {
+  console.log(`\n🛑 Received ${signal}, shutting down gracefully...`);
+  
+  server.close(async (err) => {
+    if (err) {
+      console.error("❌ Error during server shutdown:", err);
+      process.exit(1);
+    }
+    
+    console.log("✅ HTTP server closed successfully");
+    
+    // Close database connection
+    try {
+      await closeConnection();
+      console.log("✅ Database connection closed successfully");
+    } catch (dbError) {
+      console.error("❌ Error closing database connection:", dbError.message);
+    }
+    
+    console.log("👋 Shutdown completed successfully");
+    process.exit(0);
+  });
+
+  // Force close after 10 seconds
+  setTimeout(() => {
+    console.log("💥 Forcing shutdown after timeout");
+    process.exit(1);
+  }, 10000);
+};
+
+// Handle process signals
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+
+// Handle uncaught exceptions
+process.on("uncaughtException", (error) => {
+  console.error("💥 Uncaught Exception:", error);
+  gracefulShutdown("UNCAUGHT_EXCEPTION");
+});
+
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("💥 Unhandled Rejection at:", promise, "reason:", reason);
+  gracefulShutdown("UNHANDLED_REJECTION");
+});
+
+// Handle Railway-specific shutdown signals
+process.on("beforeExit", async () => {
+  console.log("🔚 Process is about to exit, cleaning up...");
+  await closeConnection();
+});
+
+// Export for testing
+module.exports = server;

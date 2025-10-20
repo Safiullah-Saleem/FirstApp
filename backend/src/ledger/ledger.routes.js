@@ -1,12 +1,25 @@
 const express = require("express");
-const { getByCompany, saveLedger, deleteLedger } = require("./ledger.controller");
+const {
+  createLedger,
+  getAllLedgers,
+  getLedgerDetails,
+  getLedgerWithBanks,
+  getLedgersByTypeWithBanks,
+  updateLedger,
+  deleteLedger,
+  getLedgerSummary
+} = require("./ledger.controller");
 
 const router = express.Router();
 
-router.get("/getByCompany", getByCompany);
-router.post("/save", saveLedger);
-router.delete("/delete", deleteLedger);
+// Ledger CRUD Routes
+router.post("/", createLedger);
+router.get("/", getAllLedgers);
+router.get("/summary", getLedgerSummary);
+router.get("/:id", getLedgerDetails);
+router.get("/:id/banks", getLedgerWithBanks);
+router.get("/type/:type/banks", getLedgersByTypeWithBanks);
+router.put("/:id", updateLedger);
+router.delete("/:id", deleteLedger);
 
 module.exports = router;
-
-
