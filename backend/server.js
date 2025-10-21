@@ -19,20 +19,38 @@ console.log(`🔑 DATABASE_URL: ${process.env.DATABASE_URL ? "Set" : "Not Set"}`
 console.log(`🌐 PORT: ${process.env.PORT || 8000}`);
 
 logStep("Loading app module");
-const app = require("./src/app");
+
+// ✅ TEMPORARILY DISABLE NEW ROUTES IN APP.JS
+// Create a simple app if main app fails
+let app;
+try {
+  app = require("./src/app");
+  console.log("✅ Main app loaded successfully");
+} catch (error) {
+  console.error("❌ Error loading main app, using fallback:", error.message);
+  
+  // Fallback simple express app
+  const express = require("express");
+  app = express();
+  
+  // Basic middleware
+  app.use(require("cors")());
+  app.use(require("body-parser").json());
+  
+  // Basic routes
+  app.get("/", (req, res) => {
+    res.json({
+      status: "backend-running",
+      message: "Server is working! (Fallback Mode)",
+      timestamp: new Date().toISOString(),
+      environment: process.env.NODE_ENV || "development",
+      service: "backend",
+      note: "Main app failed to load, using fallback"
+    });
+  });
+}
 
 const PORT = process.env.PORT || 8000;
-
-// Add basic root route if not in app.js
-app.get("/", (req, res) => {
-  res.json({
-    status: "backend-running",
-    message: "Server is working!",
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || "development",
-    service: "backend",
-  });
-});
 
 // Add health check endpoint
 app.get("/health", (req, res) => {
@@ -41,6 +59,7 @@ app.get("/health", (req, res) => {
     backend: "running",
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
+    mode: "fallback"
   });
 });
 
@@ -50,6 +69,7 @@ app.get("/api/test", (req, res) => {
     success: true,
     message: "Backend API is working!",
     data: { service: "backend", status: "operational" },
+    mode: "fallback"
   });
 });
 

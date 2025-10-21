@@ -8,9 +8,10 @@ const userRoutes = require("./user/user.routes");
 const employeeRoutes = require("./employees/employee.routes");
 const companyRoutes = require("./company/company.routes");
 const billingRoutes = require("./billing/billing.routes");
-const ledgerRoutes = require("./ledger/ledger.routes");
-const bankRoutes = require("./bank/bank.routes");
-const transactionRoutes = require("./transaction/transaction.routes");
+const ledgerRoutes = require("./ledger/ledger.account.routes");
+const bankRoutes = require("./bank/bank.account.routes");
+const cashRoutes = require("./cash/cash.account.routes");
+
 
 console.log("🟢 Loading item routes...");
 let itemRoutes;
@@ -69,9 +70,9 @@ app.use("/api/employees", employeeRoutes);
 app.use("/api/company", companyRoutes);
 app.use("/api/items", itemRoutes);
 app.use("/api/billing", billingRoutes); // ✅ This matches your routes file
-app.use("/api/ledgers", ledgerRoutes);
-app.use("/api/transactions", transactionRoutes);
-app.use("/api/banks", bankRoutes);
+app.use("/api/ledger", ledgerRoutes);
+app.use("/api/cash", cashRoutes);
+app.use("/api/bank", bankRoutes);
 console.log("✅ All routes mounted successfully");
 
 // ✅ ADDED Pre-flight OPTIONS handler
@@ -102,7 +103,7 @@ app.get("/", (req, res) => {
       "/api/company",
       "/api/items",
       "/api/billing",
-      "/api/ledgers",
+      "/api/ledger",
       "/api/transactions",
       "/api/banks",
       "/api/debug-items",
