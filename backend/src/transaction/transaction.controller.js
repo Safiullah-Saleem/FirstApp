@@ -1,6 +1,7 @@
 const { Op } = require("sequelize");
 const { sequelize } = require("../config/database");
 const Transaction = require("./transaction.model");
+const Bank = require("../bank/bank.model");
 const Ledger = require("../ledger/ledger.model");
 const { ok, badRequest, serverError } = require("../utils/response");
 
@@ -52,11 +53,18 @@ exports.addSale = async (req, res) => {
     if (!ledger_id || !company_code || !transaction) return res.status(400).json(badRequest("ledger_id, company_code, transaction required"));
     validateCompanyAccess(company_code, company_code);
 
-    const { srNum, date, detail, totalAmount, depositedAmount = 0, billNumber, isReturn = false, invoiceNumber } = transaction;
+    const { srNum, date, detail, totalAmount, depositedAmount = 0, billNumber, isReturn = false, invoiceNumber, paymentMethod = null, bankId = null, chequeNumber = null } = transaction;
     if (totalAmount == null || Number(totalAmount) < 0) return res.status(400).json(badRequest("totalAmount >= 0 required"));
     if (Number(depositedAmount) < 0) return res.status(400).json(badRequest("depositedAmount >= 0 required"));
 
     const remainingAmount = calcRemaining(totalAmount, depositedAmount);
+    if ((paymentMethod === "bank" || paymentMethod === "cheque") && Number(depositedAmount) > 0) {
+      if (!bankId) return res.status(400).json(badRequest("bankId required when paymentMethod is bank/cheque and depositedAmount > 0"));
+      const bank = await Bank.findOne({ where: { id: bankId, company_code }, transaction: trx });
+      if (!bank) return res.status(404).json(badRequest("bank not found"));
+      const newBalance = Number(bank.balance || 0) + Number(depositedAmount);
+      await bank.update({ balance: newBalance, modified_at: Math.floor(Date.now() / 1000) }, { transaction: trx });
+    }
     const created = await Transaction.create(
       {
         ledger_id,
@@ -72,6 +80,9 @@ exports.addSale = async (req, res) => {
         type: "invoice",
         invoice_number: invoiceNumber, // FIXED: invoiceNumber → invoice_number
         direction: "sale",
+        payment_method: paymentMethod,
+        bank_id: bankId,
+        cheque_number: chequeNumber,
       },
       { transaction: trx }
     );
@@ -92,11 +103,18 @@ exports.addPurchase = async (req, res) => {
     if (!ledger_id || !company_code || !transaction) return res.status(400).json(badRequest("ledger_id, company_code, transaction required"));
     validateCompanyAccess(company_code, company_code);
 
-    const { srNum, date, detail, totalAmount, depositedAmount = 0, billNumber, isReturn = false } = transaction;
+    const { srNum, date, detail, totalAmount, depositedAmount = 0, billNumber, isReturn = false, paymentMethod = null, bankId = null, chequeNumber = null } = transaction;
     if (totalAmount == null || Number(totalAmount) < 0) return res.status(400).json(badRequest("totalAmount >= 0 required"));
     if (Number(depositedAmount) < 0) return res.status(400).json(badRequest("depositedAmount >= 0 required"));
 
     const remainingAmount = calcRemaining(totalAmount, depositedAmount);
+    if ((paymentMethod === "bank" || paymentMethod === "cheque") && Number(depositedAmount) > 0) {
+      if (!bankId) return res.status(400).json(badRequest("bankId required when paymentMethod is bank/cheque and depositedAmount > 0"));
+      const bank = await Bank.findOne({ where: { id: bankId, company_code }, transaction: trx });
+      if (!bank) return res.status(404).json(badRequest("bank not found"));
+      const newBalance = Number(bank.balance || 0) - Number(depositedAmount);
+      await bank.update({ balance: newBalance, modified_at: Math.floor(Date.now() / 1000) }, { transaction: trx });
+    }
     const created = await Transaction.create(
       {
         ledger_id,
@@ -111,6 +129,9 @@ exports.addPurchase = async (req, res) => {
         is_return: !!isReturn, // FIXED: isReturn → is_return
         type: "invoice",
         direction: "purchase",
+        payment_method: paymentMethod,
+        bank_id: bankId,
+        cheque_number: chequeNumber,
       },
       { transaction: trx }
     );
@@ -132,8 +153,16 @@ exports.addPayment = async (req, res) => {
     validateCompanyAccess(company_code, company_code);
     if (["sale", "purchase"].indexOf(type) === -1) return res.status(400).json(badRequest("type must be 'sale' or 'purchase'"));
 
-    const { srNum, date, detail, depositedAmount, applyTo = [] } = payment;
+    const { srNum, date, detail, depositedAmount, applyTo = [], paymentMethod = "cash", bankId, chequeNumber } = payment;
     if (depositedAmount == null || Number(depositedAmount) <= 0) return res.status(400).json(badRequest("depositedAmount > 0 required"));
+
+    if (paymentMethod === "bank" || paymentMethod === "cheque") {
+      if (!bankId) return res.status(400).json(badRequest("bankId required for bank/cheque payments"));
+      const bank = await Bank.findOne({ where: { id: bankId, company_code }, transaction: trx });
+      if (!bank) return res.status(404).json(badRequest("bank not found"));
+      const newBalance = Number(bank.balance || 0) + Number(depositedAmount);
+      await bank.update({ balance: newBalance, modified_at: Math.floor(Date.now() / 1000) }, { transaction: trx });
+    }
 
     const invoices = await Transaction.findAll({
       where: {
@@ -179,6 +208,9 @@ exports.addPayment = async (req, res) => {
         remaining_amount: 0, // FIXED: remainingAmount → remaining_amount
         type: "payment",
         direction: type,
+        payment_method: paymentMethod,
+        bank_id: bankId || null,
+        cheque_number: chequeNumber || null,
       },
       { transaction: trx }
     );

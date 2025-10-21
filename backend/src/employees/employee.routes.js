@@ -1,5 +1,11 @@
 const express = require("express");
-const { authenticate } = require("../middleware/auth"); // ADD AUTH MIDDLEWARE
+const { 
+  authenticate, 
+  allowEmployeesAndAdmins,
+  requireAdminForEmployeeManagement,
+  requireSameCompany
+} = require("../middleware/auth"); // IMPORT NEW MIDDLEWARE
+
 const {
   createEmployee,
   getCompanyEmployees,
@@ -13,17 +19,44 @@ const {
 const router = express.Router();
 
 // ==================== PUBLIC ROUTES ====================
-router.post("/login", employeeLogin); // Employee login (public)
+router.post("/login", employeeLogin);
 
 // ==================== PROTECTED ROUTES ====================
-// Apply authentication to all management routes
-router.post("/register", authenticate, createEmployee); // ✅ SECURED: Create employee
-router.get("/", authenticate, getCompanyEmployees);     // ✅ SECURED: Get company employees
-router.get("/:id", authenticate, getEmployee);          // ✅ SECURED: Get specific employee
+// Employee can view their own profile
+router.get("/profile/me", authenticate, requireSameCompany, getEmployeeProfile);
 
-// ==================== ADDITIONAL PROTECTED ROUTES ====================
-router.put("/:id", authenticate, updateEmployee);       // Update employee
-router.delete("/:id", authenticate, deleteEmployee);    // Delete employee
-router.get("/profile/me", authenticate, getEmployeeProfile); // Employee gets own profile
+// Only company admins can create employees
+router.post("/register", authenticate, requireAdminForEmployeeManagement, createEmployee);
+
+// Only company admins can list all employees
+router.get("/", authenticate, requireAdminForEmployeeManagement, getCompanyEmployees);
+
+// Both admins and employees can view specific employee details
+router.get("/:employeeId", authenticate, allowEmployeesAndAdmins, getEmployee);
+
+// Both admins and employees can update (with proper checks in controller)
+router.put("/:employeeId", authenticate, allowEmployeesAndAdmins, updateEmployee);
+
+// Only company admins can delete employees
+router.delete("/:employeeId", authenticate, requireAdminForEmployeeManagement, deleteEmployee);
+
+// DEBUG ROUTE - Check your token and permissions
+router.get("/debug/auth-info", authenticate, (req, res) => {
+  res.json({
+    user: req.user,
+    permissions: {
+      isAdmin: req.user.type === 'user',
+      isEmployee: req.user.type === 'employee',
+      companyCode: req.user.company_code,
+      canManageEmployees: req.user.type === 'user'
+    },
+    requestInfo: {
+      method: req.method,
+      url: req.originalUrl,
+      params: req.params,
+      query: req.query
+    }
+  });
+});
 
 module.exports = router;

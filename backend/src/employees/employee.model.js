@@ -2,6 +2,32 @@ const { DataTypes } = require("sequelize");
 const { sequelize } = require("../config/database");
 const bcrypt = require("bcryptjs");
 
+// Generate unique 4-digit employee code (DEFINED BEFORE Model)
+const generateUniqueEmployeeCode = async () => {
+  let isUnique = false;
+  let code;
+  let attempts = 0;
+  const maxAttempts = 10;
+
+  while (!isUnique && attempts < maxAttempts) {
+    code = Math.floor(1000 + Math.random() * 9000).toString(); // 4-digit code
+    const existingEmployee = await sequelize.models.Employee?.findOne({
+      where: { employee_code: code },
+    }).catch(() => null);
+    if (!existingEmployee) {
+      isUnique = true;
+    }
+    attempts++;
+  }
+
+  if (!isUnique) {
+    // Fallback: timestamp-based code
+    code = `EMP${Date.now().toString().slice(-6)}`;
+  }
+
+  return code;
+};
+
 const Employee = sequelize.define(
   "Employee",
   {
@@ -73,7 +99,7 @@ const Employee = sequelize.define(
       field: 'status'
     },
     join_date: {
-      type: DataTypes.DATE, // CHANGED: Use DATE to match database timestamp type
+      type: DataTypes.BIGINT, // CHANGED: Use BIGINT for timestamp
       field: 'join_date'
     },
     access: {
@@ -133,70 +159,58 @@ const Employee = sequelize.define(
   {
     tableName: "employees",
     timestamps: false,
-    define: {
-      underscored: false
-    },
     hooks: {
       beforeCreate: async (employee) => {
-        // Generate unique employee code FIRST (before any DB operations)
-        employee.employee_code = await generateUniqueEmployeeCode();
-        
-        // Hash password if provided, otherwise generate random one
-        if (employee.password) {
-          employee.password = await bcrypt.hash(employee.password, 12);
-        } else {
-          // Generate secure random password
-          const randomPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-8);
-          employee.password = await bcrypt.hash(randomPassword, 12);
-        }
+        try {
+          console.log("=== BEFORE CREATE HOOK ===");
+          
+          // Generate unique employee code
+          employee.employee_code = await generateUniqueEmployeeCode();
+          console.log("Generated employee_code:", employee.employee_code);
+          
+          // Hash password
+          if (employee.password) {
+            employee.password = await bcrypt.hash(employee.password, 12);
+          } else {
+            const randomPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-8);
+            employee.password = await bcrypt.hash(randomPassword, 12);
+          }
 
-        // Set timestamps
-        const timestamp = Math.floor(Date.now() / 1000);
-        employee.created_at = timestamp;
-        employee.modified_at = timestamp;
-        
-        // CHANGED: Use Date object to match DATE type (not timestamp number)
-        if (!employee.join_date) {
-          employee.join_date = new Date(); // Date object, not timestamp
+          // Set timestamps as BIGINT
+          const timestamp = Math.floor(Date.now() / 1000);
+          employee.created_at = timestamp;
+          employee.modified_at = timestamp;
+          
+          // Set join_date as BIGINT timestamp (not Date object)
+          if (!employee.join_date) {
+            employee.join_date = timestamp;
+          } else if (employee.join_date instanceof Date) {
+            // Convert Date object to timestamp
+            employee.join_date = Math.floor(employee.join_date.getTime() / 1000);
+          }
+          
+          console.log("Timestamps set - created_at:", employee.created_at, "modified_at:", employee.modified_at);
+          
+        } catch (error) {
+          console.error("Error in beforeCreate hook:", error);
+          throw error;
         }
       },
       beforeUpdate: async (employee) => {
         employee.modified_at = Math.floor(Date.now() / 1000);
         
-        // Hash password if it's being updated
         if (employee.changed('password') && employee.password) {
           employee.password = await bcrypt.hash(employee.password, 12);
+        }
+        
+        // Convert join_date to timestamp if it's a Date object
+        if (employee.join_date instanceof Date) {
+          employee.join_date = Math.floor(employee.join_date.getTime() / 1000);
         }
       },
     },
   }
 );
-
-// Generate unique 4-digit employee code (DEFINED AFTER Model)
-const generateUniqueEmployeeCode = async () => {
-  let isUnique = false;
-  let code;
-  let attempts = 0;
-  const maxAttempts = 10;
-
-  while (!isUnique && attempts < maxAttempts) {
-    code = Math.floor(1000 + Math.random() * 9000).toString(); // 4-digit code
-    const existingEmployee = await Employee.findOne({
-      where: { employee_code: code },
-    });
-    if (!existingEmployee) {
-      isUnique = true;
-    }
-    attempts++;
-  }
-
-  if (!isUnique) {
-    // Fallback: timestamp-based code
-    code = `EMP${Date.now().toString().slice(-6)}`;
-  }
-
-  return code;
-};
 
 // Instance method to check password
 Employee.prototype.correctPassword = async function (candidatePassword) {

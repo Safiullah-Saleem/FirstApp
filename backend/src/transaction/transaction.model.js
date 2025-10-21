@@ -10,6 +10,21 @@ const Transaction = sequelize.define(
       autoIncrement: true, 
       primaryKey: true 
     },
+    paymentMethod: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      field: "payment_method"
+    },
+    bankId: {
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      field: "bank_id"
+    },
+    chequeNumber: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      field: "cheque_number"
+    },
     ledgerId: { 
       type: DataTypes.BIGINT, 
       allowNull: false,
@@ -95,6 +110,8 @@ const Transaction = sequelize.define(
       { fields: ["date"] },
       { fields: ["direction"] },
       { fields: ["sr_num"], unique: true },
+      { fields: ["payment_method"] },
+      { fields: ["bank_id"] },
     ],
   }
 );

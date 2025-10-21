@@ -293,18 +293,26 @@ const saveItem = async (req, res) => {
       !!(itemData && (itemData._id || itemData.itemId)) ||
       (typeof action === "string" && action.toLowerCase() === "updated");
 
-    // Validation
-    if (!itemData.company_code) {
+    // ✅ FIXED: Get company code from authenticated user OR request body
+    const companyCode = req.user?.company_code || itemData?.company_code;
+    
+    if (!companyCode) {
       return res.status(400).json({
         response: {
           status: {
             statusCode: 400,
-            statusMessage: "Company code is required",
+            statusMessage: "Company code is required. Please authenticate or provide company_code in request.",
           },
           data: null,
         },
       });
     }
+
+    // Ensure company_code is set in itemData
+    if (itemData) {
+      itemData.company_code = companyCode;
+    }
+
     if (!isUpdateIntent && !itemData.name) {
       return res.status(400).json({
         response: {
@@ -855,40 +863,46 @@ const updateItem = async (req, res) => {
   }
 };
 
-// Get Inventory (fetch all items for a company) - SUPER DEBUG VERSION
+// Get Inventory with Filters - UPDATED VERSION
 const getInventory = async (req, res) => {
   try {
-    console.log("=== GET INVENTORY DEBUG ===");
+    console.log("=== GET INVENTORY WITH FILTERS ===");
     console.log("Request method:", req.method);
     console.log("Request URL:", req.url);
     console.log("Request query:", req.query);
     console.log("Request body:", req.body);
-    console.log("Request params:", req.params);
 
     let companyCode;
+    let categoryFilter;
+    let lowStockFilter;
 
     // Handle both GET and POST requests
     if (req.method === "GET") {
       companyCode = req.query.company_code;
-      console.log("GET request - company_code from query:", companyCode);
+      categoryFilter = req.query.category;
+      lowStockFilter = req.query.lowStock === 'true';
+      console.log("GET request - Filters:", { companyCode, categoryFilter, lowStockFilter });
     } else {
       // Handle POST request format
       if (req.body.request && req.body.request.data) {
         companyCode = req.body.request.data.company_code;
-        console.log(
-          "POST request - company_code from request.data:",
-          companyCode
-        );
+        categoryFilter = req.body.request.data.category;
+        lowStockFilter = req.body.request.data.lowStock;
+        console.log("POST request - Filters from request.data:", { companyCode, categoryFilter, lowStockFilter });
       } else if (req.body.data) {
         companyCode = req.body.data.company_code;
-        console.log("POST request - company_code from data:", companyCode);
+        categoryFilter = req.body.data.category;
+        lowStockFilter = req.body.data.lowStock;
+        console.log("POST request - Filters from data:", { companyCode, categoryFilter, lowStockFilter });
       } else {
         companyCode = req.body.company_code;
-        console.log("POST request - company_code from body:", companyCode);
+        categoryFilter = req.body.category;
+        lowStockFilter = req.body.lowStock;
+        console.log("POST request - Filters from body:", { companyCode, categoryFilter, lowStockFilter });
       }
     }
 
-    console.log("Final company code:", companyCode);
+    console.log("Final filters:", { companyCode, categoryFilter, lowStockFilter });
 
     if (!companyCode) {
       console.log("❌ Company code is missing");
@@ -903,66 +917,50 @@ const getInventory = async (req, res) => {
       });
     }
 
-    console.log("🔍 Step 1: Checking if company exists...");
+    // Build where conditions
+    const whereConditions = { company_code: companyCode };
 
-    // Step 1: Check if company exists in the database
-    const User = require("../user/user.model");
-    console.log("✅ User model imported");
-
-    const company = await User.findOne({
-      where: { company_code: companyCode },
-      attributes: ["id", "company_code", "company_name"],
-    });
-
-    console.log("Company search result:", company ? company.toJSON() : "NULL");
-
-    if (!company) {
-      console.log("❌ Company not found in database");
-      return res.status(404).json({
-        response: {
-          status: {
-            statusCode: 404,
-            statusMessage: "Company not found",
-          },
-          data: null,
-        },
-      });
+    // Add category filter if provided
+    if (categoryFilter) {
+      whereConditions.category = categoryFilter;
+      console.log(`🔍 Filtering by category: ${categoryFilter}`);
     }
 
-    console.log(`✅ Company found: ${company.company_name} (${companyCode})`);
+    // Add low stock filter if requested
+    if (lowStockFilter) {
+      whereConditions.quantity = {
+        [Op.lte]: Sequelize.col('minStockLevel') // Quantity <= minStockLevel
+      };
+      console.log("🔍 Filtering low stock items");
+    }
 
-    console.log("🔍 Step 2: Fetching items for company...");
+    console.log("🔍 Final where conditions:", whereConditions);
 
-    // Step 2: Fetch items for the validated company
+    // Fetch items with filters
     const items = await Item.findAll({
-      where: { company_code: companyCode },
+      where: whereConditions,
       order: [["created_at", "DESC"]],
     });
 
-    console.log(`✅ Items found: ${items ? items.length : 0}`);
+    console.log(`✅ Items found: ${items.length}`);
 
-    // Step 3: Check if any items exist
-    if (!items || items.length === 0) {
-      console.log("❌ No items found for this company");
+    if (items.length === 0) {
+      console.log("❌ No items found for the given filters");
       return res.status(404).json({
         response: {
           status: {
             statusCode: 404,
-            statusMessage: "No inventory found for this company",
+            statusMessage: "No inventory found for the given filters",
           },
           data: null,
         },
       });
     }
 
-    console.log("🔍 Step 3: Serializing items...");
-
-    // Step 4: Serialize items and return
+    // Serialize items and return
     const serializedItems = items.map((item) => serializeItem(item));
 
-    console.log(
-      `🎉 Inventory fetched for company ${companyCode}: ${items.length} items`
-    );
+    console.log(`🎉 Inventory fetched with filters: ${items.length} items`);
 
     res.json({
       response: {
@@ -972,6 +970,11 @@ const getInventory = async (req, res) => {
         },
         data: {
           inventory: serializedItems,
+          filters: {
+            category: categoryFilter,
+            lowStock: lowStockFilter,
+            totalItems: items.length
+          }
         },
       },
     });

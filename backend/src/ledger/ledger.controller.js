@@ -68,6 +68,26 @@ exports.getByCompany = async (req, res) => {
   }
 };
 
+// Transaction history for a ledger
+exports.history = async (req, res) => {
+  try {
+    const { company_code, ledger_id, start_date, end_date } = req.query;
+    if (!company_code || !ledger_id) return res.status(400).json(badRequest("company_code, ledger_id required"));
+    validateCompanyAccess(company_code, company_code);
+
+    const where = { company_code, ledger_id };
+    if (start_date || end_date) {
+      where.date = {};
+      if (start_date) where.date[Op.gte] = Number(start_date);
+      if (end_date) where.date[Op.lte] = Number(end_date);
+    }
+    const txns = await Transaction.findAll({ where, order: [["date", "DESC"]] });
+    return res.json(ok({ transactions: txns }));
+  } catch (e) {
+    return res.status(e.status || 500).json(serverError(e.message));
+  }
+};
+
 exports.saveLedger = async (req, res) => {
   try {
     const { ledger } = (req.body && req.body.data) || {};

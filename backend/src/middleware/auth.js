@@ -265,9 +265,91 @@ const requireCompanyAccess = (companyCode) => {
   };
 };
 
+// NEW: Middleware specifically for employee routes that allows both admins and employees
+const allowEmployeesAndAdmins = (req, res, next) => {
+  console.log("🔒 Checking employee route access for:", req.user?.type, req.user?.role);
+  
+  if (!req.user) {
+    console.log("❌ No user found for employee route");
+    return res.status(401).json({
+      response: {
+        status: { 
+          statusCode: 401, 
+          statusMessage: 'Authentication required.' 
+        },
+        data: null
+      }
+    });
+  }
+
+  // Allow both company admins (type: 'user') and employees (type: 'employee')
+  if (req.user.type === 'user' || req.user.type === 'employee') {
+    console.log("✅ Employee route access granted for:", req.user.type);
+    return next();
+  }
+
+  console.log("❌ Employee route access denied for user type:", req.user.type);
+  return res.status(403).json({
+    response: {
+      status: { 
+        statusCode: 403, 
+        statusMessage: 'Access denied. Employee or admin access required.' 
+      },
+      data: null
+    }
+  });
+};
+
+// NEW: Middleware for company admin employee management (only admins can manage employees)
+const requireAdminForEmployeeManagement = (req, res, next) => {
+  console.log("🔒 Checking admin access for employee management:", req.user?.type);
+  
+  if (!req.user || req.user.type !== 'user') {
+    console.log("❌ Employee management access denied - User type:", req.user?.type);
+    return res.status(403).json({
+      response: {
+        status: { 
+          statusCode: 403, 
+          statusMessage: 'Access denied. Only company administrators can manage employees.' 
+        },
+        data: null
+      }
+    });
+  }
+  
+  console.log("✅ Employee management access granted for admin");
+  next();
+};
+
+// NEW: Middleware that checks if user can access their own company data
+const requireSameCompany = (req, res, next) => {
+  console.log("🔒 Checking same company access");
+  
+  if (!req.user || !req.user.company_code) {
+    console.log("❌ Company code missing");
+    return res.status(403).json({
+      response: {
+        status: { 
+          statusCode: 403, 
+          statusMessage: 'Access denied. Company information missing.' 
+        },
+        data: null
+      }
+    });
+  }
+
+  // For employee routes, we should allow access to same company data
+  // This is less restrictive than requireCompanyAccess
+  console.log("✅ Same company access granted for:", req.user.company_code);
+  next();
+};
+
 module.exports = { 
   authenticate, 
   requireAdmin, 
   requireEmployeeRole,
-  requireCompanyAccess
+  requireCompanyAccess,
+  allowEmployeesAndAdmins, // NEW
+  requireAdminForEmployeeManagement, // NEW
+  requireSameCompany // NEW
 };

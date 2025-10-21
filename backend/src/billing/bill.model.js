@@ -15,13 +15,17 @@ const Bill = sequelize.define(
       references: {
         model: 'users',
         key: 'company_code'
+      },
+      validate: {
+        notEmpty: true
       }
     },
     bill_number: {
       type: DataTypes.INTEGER,
+      allowNull: true,
     },
     customer: {
-      type: DataTypes.STRING,
+      type: DataTypes.STRING(255),
       defaultValue: '',
     },
     phone: {
@@ -29,7 +33,7 @@ const Bill = sequelize.define(
       defaultValue: '',
     },
     seller: {
-      type: DataTypes.STRING,
+      type: DataTypes.STRING(255),
       defaultValue: '',
     },
     date: {
@@ -38,27 +42,42 @@ const Bill = sequelize.define(
     },
     sub_total: {
       type: DataTypes.DECIMAL(12, 2),
-      defaultValue: 0,
+      defaultValue: 0.00,
+      validate: {
+        min: 0
+      }
     },
     discount: {
       type: DataTypes.DECIMAL(12, 2),
-      defaultValue: 0,
+      defaultValue: 0.00,
+      validate: {
+        min: 0
+      }
     },
     total: {
       type: DataTypes.DECIMAL(12, 2),
-      defaultValue: 0,
+      defaultValue: 0.00,
+      validate: {
+        min: 0
+      }
     },
     paid: {
       type: DataTypes.DECIMAL(12, 2),
-      defaultValue: 0,
+      defaultValue: 0.00,
+      validate: {
+        min: 0
+      }
     },
     change_amount: {
       type: DataTypes.DECIMAL(12, 2),
-      defaultValue: 0,
+      defaultValue: 0.00,
     },
     payment_method: {
       type: DataTypes.STRING(50),
       defaultValue: 'cash',
+      validate: {
+        isIn: [['cash', 'credit_card', 'debit_card', 'bank_transfer', 'cheque', 'upi', 'online']]
+      }
     },
     notes: {
       type: DataTypes.TEXT,
@@ -77,7 +96,7 @@ const Bill = sequelize.define(
       defaultValue: '',
     },
     bank_name: {
-      type: DataTypes.STRING,
+      type: DataTypes.STRING(255),
       defaultValue: '',
     },
     cheque: {
@@ -89,7 +108,7 @@ const Bill = sequelize.define(
       defaultValue: '',
     },
     ledger_id: {
-      type: DataTypes.STRING,
+      type: DataTypes.STRING(100),
       defaultValue: '',
     },
     ledger_address: {
@@ -99,10 +118,13 @@ const Bill = sequelize.define(
     discount_type: {
       type: DataTypes.STRING(50),
       defaultValue: 'price',
+      validate: {
+        isIn: [['price', 'percentage']]
+      }
     },
     formally_outstandings: {
       type: DataTypes.DECIMAL(12, 2),
-      defaultValue: 0,
+      defaultValue: 0.00,
     },
     created_at: {
       type: DataTypes.BIGINT,
@@ -129,13 +151,92 @@ const Bill = sequelize.define(
         fields: ["date"],
         name: "idx_bills_date",
       },
+      {
+        fields: ["customer"],
+        name: "idx_bills_customer",
+      },
+      {
+        fields: ["payment_method"],
+        name: "idx_bills_payment_method",
+      }
     ],
     hooks: {
+      beforeValidate: (bill) => {
+        // Ensure numeric fields are properly formatted
+        const numericFields = ['sub_total', 'discount', 'total', 'paid', 'change_amount', 'formally_outstandings'];
+        numericFields.forEach(field => {
+          if (bill[field] !== undefined && bill[field] !== null) {
+            bill[field] = parseFloat(bill[field]) || 0;
+          }
+        });
+
+        // Auto-calculate total if not provided
+        if (!bill.total && bill.sub_total !== undefined && bill.discount !== undefined) {
+          bill.total = parseFloat(bill.sub_total) - parseFloat(bill.discount);
+        }
+
+        // Auto-calculate change amount
+        if (bill.paid !== undefined && bill.total !== undefined) {
+          bill.change_amount = Math.max(0, parseFloat(bill.paid) - parseFloat(bill.total));
+        }
+      },
+
+      beforeCreate: async (bill) => {
+        if (!bill.created_at) {
+          bill.created_at = Math.floor(Date.now() / 1000);
+        }
+        bill.modified_at = Math.floor(Date.now() / 1000);
+
+        // Auto-generate bill number if not provided
+        if (!bill.bill_number) {
+          const lastBill = await Bill.findOne({
+            where: { company_code: bill.company_code },
+            order: [['bill_number', 'DESC']],
+            attributes: ['bill_number']
+          });
+          
+          bill.bill_number = lastBill ? lastBill.bill_number + 1 : 1;
+        }
+      },
+
       beforeUpdate: (bill) => {
         bill.modified_at = Math.floor(Date.now() / 1000);
       },
+
+      afterCreate: async (bill) => {
+        console.log(`✅ Bill #${bill.bill_number} created successfully for company ${bill.company_code}`);
+      },
+
+      afterUpdate: async (bill) => {
+        console.log(`📝 Bill #${bill.bill_number} updated for company ${bill.company_code}`);
+      }
     },
   }
 );
+
+// Class methods for common queries
+Bill.findByCompany = function(companyCode) {
+  return this.findAll({
+    where: { company_code: companyCode },
+    order: [['created_at', 'DESC']]
+  });
+};
+
+Bill.findByCompanyAndDateRange = function(companyCode, startDate, endDate) {
+  return this.findAll({
+    where: {
+      company_code: companyCode,
+      date: {
+        [sequelize.Op.between]: [startDate, endDate]
+      }
+    },
+    order: [['date', 'DESC']]
+  });
+};
+
+// Instance method to calculate outstanding amount
+Bill.prototype.getOutstandingAmount = function() {
+  return Math.max(0, this.total - this.paid);
+};
 
 module.exports = Bill;

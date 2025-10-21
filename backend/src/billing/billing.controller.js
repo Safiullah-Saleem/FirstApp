@@ -3,8 +3,11 @@ const User = require("../user/user.model");
 const Item = require("../items/item.model");
 const Bill = require("./bill.model");
 const Sale = require("./sale.model");
+const { Op } = require("sequelize");
 
-// Save Bills API
+// ===== CREATE OPERATIONS =====
+
+// Save Bills API (CREATE)
 const saveBills = async (req, res) => {
   const transaction = await sequelize.transaction();
 
@@ -13,44 +16,15 @@ const saveBills = async (req, res) => {
     console.log("Request body:", JSON.stringify(req.body, null, 2));
 
     // Extract bill data from request - handle both formats
-    let billData = null;
-    
-    console.log("Raw request body:", req.body);
-    console.log("Request body type:", typeof req.body);
-    console.log("Request body keys:", Object.keys(req.body || {}));
-    
-    if (req.body && req.body.request && req.body.request.data && req.body.request.data.bill) {
-      // Wrapped format: { request: { method: "saveBills", data: { bill: {...} } } }
-      billData = req.body.request.data.bill;
-      console.log("Using wrapped format");
-    } else if (req.body && (req.body.company_code || req.body.items)) {
-      // Simple format: { company_code: "8888", items: [...], ... }
-      billData = req.body;
-      console.log("Using simple format");
-    } else {
-      await transaction.rollback();
-      return res.status(400).json({
-        response: {
-          status: {
-            statusCode: 400,
-            statusMessage:
-              "Invalid request format. Expected wrapped format or simple format with company_code",
-          },
-          data: null,
-        },
-      });
-    }
+    let billData = getBillDataFromRequest(req.body);
 
-    // Debug logging
-    console.log("Extracted billData:", billData);
-    
     if (!billData) {
       await transaction.rollback();
       return res.status(400).json({
         response: {
           status: {
             statusCode: 400,
-            statusMessage: "Bill data is missing or invalid",
+            statusMessage: "Invalid request format",
           },
           data: null,
         },
@@ -59,6 +33,7 @@ const saveBills = async (req, res) => {
 
     const { company_code, items, ...otherBillData } = billData;
 
+    // Validate required fields
     if (!company_code) {
       await transaction.rollback();
       return res.status(400).json({
@@ -104,19 +79,28 @@ const saveBills = async (req, res) => {
       });
     }
 
+    // Generate bill number if not provided
+    let bill_number = otherBillData.billNumber;
+    if (!bill_number) {
+      const lastBill = await Bill.findOne({
+        where: { company_code },
+        order: [['bill_number', 'DESC']],
+        transaction
+      });
+      bill_number = lastBill ? lastBill.bill_number + 1 : 1;
+    }
+
     // Process inventory updates for each item
     console.log("Starting inventory updates...");
     for (const item of items) {
       await processInventoryUpdate(item, company_code, transaction);
-      console.log(`Inventory updated for item ${item.itemId}`);
     }
-    console.log("All inventory updates completed");
 
     // Save bill
     const savedBill = await Bill.create(
       {
         company_code,
-        bill_number: otherBillData.billNumber || null,
+        bill_number,
         customer: otherBillData.customer || "",
         phone: otherBillData.phone || "",
         seller: otherBillData.seller || "",
@@ -137,8 +121,7 @@ const saveBills = async (req, res) => {
         ledger_id: otherBillData.ledger_id || "",
         ledger_address: otherBillData.ledger_address || "",
         discount_type: otherBillData.discount_type || "price",
-        formally_outstandings:
-          parseFloat(otherBillData.formallyOutstandings) || 0,
+        formally_outstandings: parseFloat(otherBillData.formallyOutstandings) || 0,
       },
       { transaction }
     );
@@ -147,34 +130,32 @@ const saveBills = async (req, res) => {
 
     // Insert each sold item into sales table
     for (const item of items) {
-        await Sale.create(
-          {
-            bill_id: billId,
-            company_code,
-            item_id: String(item.itemId),
-          name: item.name,
+      await Sale.create(
+        {
+          bill_id: billId,
+          company_code,
+          item_id: String(getItemId(item)),
+          name: item.name || item.productName || "",
           description: item.description || "",
-          item_code: item.itemCode || "",
+          item_code: item.itemCode || item.code || "",
           category: item.category || "",
           unit: item.unit || "",
-          quantity: item.saleQuantity || 1,
-          sale_price: parseFloat(item.salePrice) || 0,
+          quantity: item.saleQuantity || item.quantity || 1,
+          sale_price: parseFloat(item.salePrice) || parseFloat(item.price) || 0,
           cost_price: parseFloat(item.costPrice) || 0,
-          total_price:
-            (parseFloat(item.salePrice) || 0) * (item.saleQuantity || 1),
+          total_price: (parseFloat(item.salePrice) || parseFloat(item.price) || 0) * (item.saleQuantity || item.quantity || 1),
           discount: parseFloat(item.discount) || 0,
           vendor: item.vendor || "",
           selected_imei: item.selectedImei || "",
-          batch_number: item.saleBatchNumber || item.batchNo || "",
+          batch_number: item.saleBatchNumber || item.batchNo || item.batchNumber || "",
           sale_type: item.saleType || "pieces",
         },
         { transaction }
       );
     }
 
-    // Commit transaction to persist all changes
+    // Commit transaction
     await transaction.commit();
-    console.log("Transaction committed successfully");
     console.log("Bill saved successfully with ID:", billId);
 
     res.json({
@@ -185,6 +166,7 @@ const saveBills = async (req, res) => {
         },
         data: {
           billId: billId,
+          billNumber: bill_number,
           message: "Bill and inventory updated successfully",
         },
       },
@@ -192,8 +174,6 @@ const saveBills = async (req, res) => {
   } catch (error) {
     await transaction.rollback();
     console.error("SAVE BILLS ERROR:", error);
-    console.error("Error stack:", error.stack);
-    console.error("Request body was:", JSON.stringify(req.body, null, 2));
     
     res.status(500).json({
       response: {
@@ -211,46 +191,15 @@ const saveBills = async (req, res) => {
   }
 };
 
-// Save Sale API
+// Save Sale API (CREATE)
 const saveSale = async (req, res) => {
   const transaction = await sequelize.transaction();
 
   try {
     console.log("=== SAVE SALE ===");
-    console.log("Request body:", JSON.stringify(req.body, null, 2));
-
-    // Extract sales data from request - handle both formats
-    let salesData = null;
     
-    console.log("Raw request body:", req.body);
-    console.log("Request body type:", typeof req.body);
-    console.log("Is array:", Array.isArray(req.body));
-    
-    if (req.body && req.body.request && req.body.request.data && req.body.request.data.sales) {
-      // Wrapped format: { request: { method: "saveSale", data: { sales: [...] } } }
-      salesData = req.body.request.data.sales;
-      console.log("Using wrapped format");
-    } else if (Array.isArray(req.body)) {
-      // Simple format: [{ company_code: "8888", itemId: 123, ... }]
-      salesData = req.body;
-      console.log("Using array format");
-    } else if (req.body && req.body.company_code && req.body.itemId) {
-      // Single sale object: { company_code: "8888", itemId: 123, ... }
-      salesData = [req.body];
-      console.log("Using single object format");
-    } else {
-      await transaction.rollback();
-      return res.status(400).json({
-        response: {
-          status: {
-            statusCode: 400,
-            statusMessage:
-              "Invalid request format. Expected wrapped format or simple sales array/object",
-          },
-          data: null,
-        },
-      });
-    }
+    // Extract sales data from request
+    let salesData = getSalesDataFromRequest(req.body);
 
     if (!Array.isArray(salesData) || salesData.length === 0) {
       await transaction.rollback();
@@ -268,22 +217,6 @@ const saveSale = async (req, res) => {
     const results = [];
 
     for (const sale of salesData) {
-      // Debug logging
-      console.log("Processing sale:", sale);
-      
-      if (!sale) {
-        await transaction.rollback();
-        return res.status(400).json({
-          response: {
-            status: {
-              statusCode: 400,
-              statusMessage: "Sale data is missing or invalid",
-            },
-            data: null,
-          },
-        });
-      }
-
       const { company_code } = sale;
 
       if (!company_code) {
@@ -318,15 +251,13 @@ const saveSale = async (req, res) => {
       }
 
       // Inventory update
-      console.log(`Updating inventory for sale item ${sale.itemId}`);
       await processInventoryUpdateFromSale(sale, company_code, transaction);
-      console.log(`Inventory updated for sale item ${sale.itemId}`);
 
       // Save sale
       const savedSale = await Sale.create(
         {
           company_code,
-          item_id: String(sale.itemId),
+          item_id: String(getItemId(sale)),
           name: sale.name,
           description: sale.description || "",
           item_code: sale.itemCode || "",
@@ -352,16 +283,13 @@ const saveSale = async (req, res) => {
 
       results.push({
         saleId: savedSale.id,
-        itemId: sale.itemId,
+        itemId: getItemId(sale),
         itemName: sale.name,
       });
     }
 
-    // Commit transaction to persist all changes
     await transaction.commit();
-    console.log("Transaction committed successfully");
-    console.log("Sales saved successfully:", results);
-
+    
     res.json({
       response: {
         status: {
@@ -377,8 +305,6 @@ const saveSale = async (req, res) => {
   } catch (error) {
     await transaction.rollback();
     console.error("SAVE SALE ERROR:", error);
-    console.error("Error stack:", error.stack);
-    console.error("Request body was:", JSON.stringify(req.body, null, 2));
     
     res.status(500).json({
       response: {
@@ -396,49 +322,477 @@ const saveSale = async (req, res) => {
   }
 };
 
-// === Inventory Helpers ===
-const processInventoryUpdate = async (item, company_code, transaction) => {
-  console.log("Processing inventory update for item:", item.itemId);
+// ===== READ OPERATIONS =====
 
+// Get all bills for a company
+const getAllBills = async (req, res) => {
+  try {
+    const { company_code } = req.params;
+    const { page = 1, limit = 50, startDate, endDate } = req.query;
+
+    if (!company_code) {
+      return res.status(400).json({
+        response: {
+          status: {
+            statusCode: 400,
+            statusMessage: "Company code is required",
+          },
+          data: null,
+        },
+      });
+    }
+
+    const whereClause = { company_code };
+    
+    // Add date filter if provided
+    if (startDate && endDate) {
+      whereClause.date = {
+        [Op.between]: [startDate, endDate]
+      };
+    }
+
+    const offset = (page - 1) * limit;
+
+    const { count, rows: bills } = await Bill.findAndCountAll({
+      where: whereClause,
+      order: [['created_at', 'DESC']],
+      limit: parseInt(limit),
+      offset: offset
+    });
+
+    res.json({
+      response: {
+        status: {
+          statusCode: 200,
+          statusMessage: "Bills retrieved successfully",
+        },
+        data: {
+          bills,
+          pagination: {
+            currentPage: parseInt(page),
+            totalPages: Math.ceil(count / limit),
+            totalItems: count,
+            itemsPerPage: parseInt(limit)
+          }
+        },
+      },
+    });
+  } catch (error) {
+    console.error("GET ALL BILLS ERROR:", error);
+    
+    res.status(500).json({
+      response: {
+        status: {
+          statusCode: 500,
+          statusMessage: "Internal server error",
+        },
+        data: null,
+      },
+    });
+  }
+};
+
+// ===== UPDATE OPERATIONS =====
+
+// Update bill
+const updateBill = async (req, res) => {
+  const transaction = await sequelize.transaction();
+
+  try {
+    const { id } = req.params;
+    const updateData = req.body;
+
+    const bill = await Bill.findOne({
+      where: { id: parseInt(id) },
+      transaction
+    });
+
+    if (!bill) {
+      await transaction.rollback();
+      return res.status(404).json({
+        response: {
+          status: {
+            statusCode: 404,
+            statusMessage: "Bill not found",
+          },
+          data: null,
+        },
+      });
+    }
+
+    // Update bill
+    await bill.update(updateData, { transaction });
+
+    await transaction.commit();
+
+    res.json({
+      response: {
+        status: {
+          statusCode: 200,
+          statusMessage: "Bill updated successfully",
+        },
+        data: {
+          bill,
+          message: "Bill updated successfully",
+        },
+      },
+    });
+  } catch (error) {
+    await transaction.rollback();
+    console.error("UPDATE BILL ERROR:", error);
+    
+    res.status(500).json({
+      response: {
+        status: {
+          statusCode: 500,
+          statusMessage: "Internal server error",
+        },
+        data: null,
+      },
+    });
+  }
+};
+
+// Update sale
+const updateSale = async (req, res) => {
+  const transaction = await sequelize.transaction();
+
+  try {
+    const { id } = req.params;
+    const updateData = req.body;
+
+    const sale = await Sale.findOne({
+      where: { id: parseInt(id) },
+      transaction
+    });
+
+    if (!sale) {
+      await transaction.rollback();
+      return res.status(404).json({
+        response: {
+          status: {
+            statusCode: 404,
+            statusMessage: "Sale not found",
+          },
+          data: null,
+        },
+      });
+    }
+
+    // Update sale
+    await sale.update(updateData, { transaction });
+
+    await transaction.commit();
+
+    res.json({
+      response: {
+        status: {
+          statusCode: 200,
+          statusMessage: "Sale updated successfully",
+        },
+        data: {
+          sale,
+          message: "Sale updated successfully",
+        },
+      },
+    });
+  } catch (error) {
+    await transaction.rollback();
+    console.error("UPDATE SALE ERROR:", error);
+    
+    res.status(500).json({
+      response: {
+        status: {
+          statusCode: 500,
+          statusMessage: "Internal server error",
+        },
+        data: null,
+      },
+    });
+  }
+};
+
+// ===== DELETE OPERATIONS =====
+
+// Delete bill (with inventory restoration)
+const deleteBill = async (req, res) => {
+  const transaction = await sequelize.transaction();
+
+  try {
+    const { id } = req.params;
+    const { company_code } = req.body;
+
+    if (!company_code) {
+      await transaction.rollback();
+      return res.status(400).json({
+        response: {
+          status: {
+            statusCode: 400,
+            statusMessage: "Company code is required",
+          },
+          data: null,
+        },
+      });
+    }
+
+    const bill = await Bill.findOne({
+      where: { 
+        id: parseInt(id),
+        company_code 
+      },
+      transaction
+    });
+
+    if (!bill) {
+      await transaction.rollback();
+      return res.status(404).json({
+        response: {
+          status: {
+            statusCode: 404,
+            statusMessage: "Bill not found",
+          },
+          data: null,
+        },
+      });
+    }
+
+    // Get sales for this bill to restore inventory
+    const sales = await Sale.findAll({
+      where: { bill_id: parseInt(id) },
+      transaction
+    });
+
+    // Restore inventory for each sale item
+    for (const sale of sales) {
+      await restoreInventory(sale, company_code, transaction);
+    }
+
+    // Delete associated sales
+    await Sale.destroy({
+      where: { bill_id: parseInt(id) },
+      transaction
+    });
+
+    // Delete the bill
+    await Bill.destroy({
+      where: { id: parseInt(id) },
+      transaction
+    });
+
+    await transaction.commit();
+
+    res.json({
+      response: {
+        status: {
+          statusCode: 200,
+          statusMessage: "Bill deleted successfully",
+        },
+        data: {
+          message: "Bill and associated sales deleted successfully. Inventory restored.",
+        },
+      },
+    });
+  } catch (error) {
+    await transaction.rollback();
+    console.error("DELETE BILL ERROR:", error);
+    
+    res.status(500).json({
+      response: {
+        status: {
+          statusCode: 500,
+          statusMessage: "Internal server error",
+        },
+        data: null,
+      },
+    });
+  }
+};
+
+// Delete sale
+const deleteSale = async (req, res) => {
+  const transaction = await sequelize.transaction();
+
+  try {
+    const { id } = req.params;
+    const { company_code } = req.body;
+
+    if (!company_code) {
+      await transaction.rollback();
+      return res.status(400).json({
+        response: {
+          status: {
+            statusCode: 400,
+            statusMessage: "Company code is required",
+          },
+          data: null,
+        },
+      });
+    }
+
+    const sale = await Sale.findOne({
+      where: { 
+        id: parseInt(id),
+        company_code 
+      },
+      transaction
+    });
+
+    if (!sale) {
+      await transaction.rollback();
+      return res.status(404).json({
+        response: {
+          status: {
+            statusCode: 404,
+            statusMessage: "Sale not found",
+          },
+          data: null,
+        },
+      });
+    }
+
+    // Restore inventory
+    await restoreInventory(sale, company_code, transaction);
+
+    // Delete the sale
+    await Sale.destroy({
+      where: { id: parseInt(id) },
+      transaction
+    });
+
+    await transaction.commit();
+
+    res.json({
+      response: {
+        status: {
+          statusCode: 200,
+          statusMessage: "Sale deleted successfully",
+        },
+        data: {
+          message: "Sale deleted successfully. Inventory restored.",
+        },
+      },
+    });
+  } catch (error) {
+    await transaction.rollback();
+    console.error("DELETE SALE ERROR:", error);
+    
+    res.status(500).json({
+      response: {
+        status: {
+          statusCode: 500,
+          statusMessage: "Internal server error",
+        },
+        data: null,
+      },
+    });
+  }
+};
+
+// ===== HELPER FUNCTIONS =====
+
+const getBillDataFromRequest = (body) => {
+  if (body && body.request && body.request.data && body.request.data.bill) {
+    return body.request.data.bill;
+  } else if (body && (body.company_code || body.items)) {
+    return body;
+  }
+  return null;
+};
+
+const getSalesDataFromRequest = (body) => {
+  if (body && body.request && body.request.data && body.request.data.sales) {
+    return body.request.data.sales;
+  } else if (Array.isArray(body)) {
+    return body;
+  } else if (body && body.company_code && body.itemId) {
+    return [body];
+  }
+  return null;
+};
+
+const getItemId = (item) => {
+  const possibleIdFields = ['itemId', 'id', 'productId', 'item_id', 'product_id'];
+  
+  for (const field of possibleIdFields) {
+    if (item[field] !== undefined && item[field] !== null) {
+      console.log(`Found item ID in field '${field}':`, item[field]);
+      return item[field];
+    }
+  }
+  
+  console.log('Available fields in item:', Object.keys(item));
+  throw new Error(`Item ID not found. Available fields: ${Object.keys(item).join(', ')}`);
+};
+
+// ===== FIXED INVENTORY HELPER FUNCTIONS =====
+
+const processInventoryUpdate = async (item, company_code, transaction) => {
+  const itemId = getItemId(item);
+  console.log("🔄 Processing inventory update for item ID:", itemId);
+  console.log("📦 Full item data:", JSON.stringify(item, null, 2));
+
+  // FIXED: Search by 'id' field (INTEGER) since that's what your item model uses
   const dbItem = await Item.findOne({
     where: {
-      itemId: String(item.itemId), // Convert to string to match database type
+      id: parseInt(itemId),  // ← CHANGED: Use 'id' field instead of 'itemId'
       company_code,
     },
     transaction,
   });
 
-  if (!dbItem) throw new Error(`Item with ID ${item.itemId} not found`);
+  if (!dbItem) {
+    // Enhanced debugging
+    console.error(`❌ Item with ID ${itemId} not found in database`);
+    
+    const availableItems = await Item.findAll({
+      where: { company_code },
+      attributes: ['id', 'itemId', 'name', 'quantity'],
+      transaction
+    });
+    
+    console.log('📋 Available items in database:');
+    availableItems.forEach(avItem => {
+      console.log(`   - id: ${avItem.id}, itemId: "${avItem.itemId}", name: "${avItem.name}", qty: ${avItem.quantity}`);
+    });
+    
+    throw new Error(`Item with ID ${itemId} not found. Available items: ${availableItems.map(i => `id:${i.id}`).join(', ')}`);
+  }
 
-  const saleQuantity = item.saleQuantity || 1;
+  console.log(`✅ Found item: ${dbItem.name}, Current quantity: ${dbItem.quantity}`);
+  
+  const saleQuantity = item.saleQuantity || item.quantity || 1;
+  console.log(`🛒 Sale quantity: ${saleQuantity}`);
 
   if (item.selectedImei && item.selectedImei.trim() !== "") {
     await processImeiSale(dbItem, item.selectedImei, transaction);
-  } else if (item.saleBatchNumber || item.batchNo) {
+  } else if (item.saleBatchNumber || item.batchNo || item.batchNumber) {
     await processBatchSale(dbItem, item, saleQuantity, transaction);
   } else {
     await processSimpleItemSale(dbItem, saleQuantity, transaction);
   }
 };
 
-const processInventoryUpdateFromSale = async (
-  sale,
-  company_code,
-  transaction
-) => {
-  console.log("Processing inventory update for sale item:", sale.itemId);
+const processInventoryUpdateFromSale = async (sale, company_code, transaction) => {
+  const itemId = getItemId(sale);
+  console.log("Processing inventory update for sale item:", itemId);
 
+  // FIXED: Search by 'id' field
   const dbItem = await Item.findOne({
     where: {
-      itemId: String(sale.itemId), // Convert to string to match database type
+      id: parseInt(itemId),  // ← CHANGED: Use 'id' field
       company_code,
     },
     transaction,
   });
 
-  if (!dbItem) throw new Error(`Item with ID ${sale.itemId} not found`);
+  if (!dbItem) {
+    console.error(`Item with ID ${itemId} not found in database for company ${company_code}`);
+    throw new Error(`Item with ID ${itemId} not found`);
+  }
 
   const saleQuantity = sale.quantity || 1;
+
+  console.log(`Item found: ${dbItem.name}, current quantity: ${dbItem.quantity}, sale quantity: ${saleQuantity}`);
 
   if (sale.selectedImei && sale.selectedImei.trim() !== "") {
     await processImeiSale(dbItem, sale.selectedImei, transaction);
@@ -448,11 +802,11 @@ const processInventoryUpdateFromSale = async (
 };
 
 const processSimpleItemSale = async (dbItem, saleQuantity, transaction) => {
-  console.log(
-    `Processing simple item sale: ${dbItem.itemId}, quantity: ${saleQuantity}`
-  );
+  console.log(`Processing simple item sale: ${dbItem.id}, quantity: ${saleQuantity}`);
 
-  if (dbItem.quantity < saleQuantity) throw new Error("Insufficient stock");
+  if (dbItem.quantity < saleQuantity) {
+    throw new Error(`Insufficient stock for item ${dbItem.id}. Available: ${dbItem.quantity}, Requested: ${saleQuantity}`);
+  }
 
   const newQuantity = dbItem.quantity - saleQuantity;
 
@@ -464,18 +818,15 @@ const processSimpleItemSale = async (dbItem, saleQuantity, transaction) => {
     { transaction }
   );
 
-  // Force reload to verify update
   await dbItem.reload({ transaction });
-  console.log(`✅ Successfully updated item ${dbItem.itemId} quantity from ${dbItem.quantity + saleQuantity} to ${dbItem.quantity}`);
+  console.log(`✅ Successfully updated item ${dbItem.id} quantity from ${dbItem.quantity + saleQuantity} to ${dbItem.quantity}`);
 };
 
 const processBatchSale = async (dbItem, item, saleQuantity, transaction) => {
-  const batchNumber = item.saleBatchNumber || item.batchNo;
+  const batchNumber = item.saleBatchNumber || item.batchNo || item.batchNumber;
   const saleType = item.saleType || "pieces";
 
-  console.log(
-    `Processing batch sale: ${dbItem.itemId}, batch: ${batchNumber}, type: ${saleType}, quantity: ${saleQuantity}`
-  );
+  console.log(`Processing batch sale: ${dbItem.id}, batch: ${batchNumber}, type: ${saleType}, quantity: ${saleQuantity}`);
 
   let batchNumbers = dbItem.batchNumber || [];
   if (typeof batchNumbers === "string") {
@@ -514,14 +865,13 @@ const processBatchSale = async (dbItem, item, saleQuantity, transaction) => {
     { transaction }
   );
 
-  // Force reload to verify update
   await dbItem.reload({ transaction });
   console.log(`✅ Successfully updated batch ${batchNumber} quantity to ${batch.quantity}`);
-  console.log(`✅ Successfully updated total item ${dbItem.itemId} quantity to ${dbItem.quantity}`);
+  console.log(`✅ Successfully updated total item ${dbItem.id} quantity to ${dbItem.quantity}`);
 };
 
 const processImeiSale = async (dbItem, selectedImei, transaction) => {
-  console.log(`Processing IMEI sale: ${dbItem.itemId}, IMEI: ${selectedImei}`);
+  console.log(`Processing IMEI sale: ${dbItem.id}, IMEI: ${selectedImei}`);
 
   let imeiNumbers = dbItem.imeiNumbers || [];
   if (typeof imeiNumbers === "string") {
@@ -549,13 +899,48 @@ const processImeiSale = async (dbItem, selectedImei, transaction) => {
     { transaction }
   );
 
-  // Force reload to verify update
   await dbItem.reload({ transaction });
-  console.log(`✅ Successfully removed IMEI ${selectedImei} from item ${dbItem.itemId}`);
-  console.log(`✅ Successfully updated item ${dbItem.itemId} quantity to ${dbItem.quantity}`);
+  console.log(`✅ Successfully removed IMEI ${selectedImei} from item ${dbItem.id}`);
+  console.log(`✅ Successfully updated item ${dbItem.id} quantity to ${dbItem.quantity}`);
+};
+
+// Restore inventory when deleting bills/sales
+const restoreInventory = async (sale, company_code, transaction) => {
+  // FIXED: Search by 'id' field
+  const dbItem = await Item.findOne({
+    where: {
+      id: parseInt(sale.item_id),  // ← CHANGED: Use 'id' field
+      company_code,
+    },
+    transaction,
+  });
+
+  if (dbItem) {
+    const newQuantity = dbItem.quantity + sale.quantity;
+    await dbItem.update(
+      {
+        quantity: newQuantity,
+        modified_at: Math.floor(Date.now() / 1000),
+      },
+      { transaction }
+    );
+    console.log(`✅ Restored ${sale.quantity} units to item ${sale.item_id}`);
+  }
 };
 
 module.exports = {
+  // CREATE
   saveBills,
   saveSale,
+  
+  // READ
+  getAllBills,
+  
+  // UPDATE
+  updateBill,
+  updateSale,
+  
+  // DELETE
+  deleteBill,
+  deleteSale
 };

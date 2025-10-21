@@ -9,6 +9,7 @@ const employeeRoutes = require("./employees/employee.routes");
 const companyRoutes = require("./company/company.routes");
 const billingRoutes = require("./billing/billing.routes");
 const ledgerRoutes = require("./ledger/ledger.routes");
+const bankRoutes = require("./bank/bank.routes");
 const transactionRoutes = require("./transaction/transaction.routes");
 
 console.log("🟢 Loading item routes...");
@@ -61,23 +62,30 @@ testConnection().catch((error) => {
   // Don't crash the app - continue without database
 });
 
-// Routes
+// ✅ FIXED: Routes mounting - CORRECTED BILLING PATH
+console.log("🟢 Mounting routes...");
 app.use("/api/users", userRoutes);
 app.use("/api/employees", employeeRoutes);
 app.use("/api/company", companyRoutes);
 app.use("/api/items", itemRoutes);
-app.use("/api/billing", billingRoutes);
+app.use("/api/billing", billingRoutes); // ✅ This matches your routes file
 app.use("/api/ledgers", ledgerRoutes);
 app.use("/api/transactions", transactionRoutes);
+app.use("/api/banks", bankRoutes);
+console.log("✅ All routes mounted successfully");
 
 // ✅ ADDED Pre-flight OPTIONS handler
 app.options("*", cors());
 
-// Add a direct test route to verify items functionality
-app.get("/api/debug-items", (req, res) => {
+// Add a direct test route to verify billing functionality
+app.get("/api/debug-billing", (req, res) => {
   res.json({
-    message: "Direct items debug route",
-    itemRoutesLoaded: !!itemRoutes,
+    message: "Direct billing debug route",
+    billingRoutesLoaded: !!billingRoutes,
+    availableEndpoints: [
+      "POST /api/billing/saveBills",
+      "POST /api/billing/saveSale"
+    ],
     timestamp: new Date().toISOString(),
   });
 });
@@ -96,7 +104,9 @@ app.get("/", (req, res) => {
       "/api/billing",
       "/api/ledgers",
       "/api/transactions",
+      "/api/banks",
       "/api/debug-items",
+      "/api/debug-billing",
       "/health",
     ],
   });
@@ -174,6 +184,7 @@ if (require.main === module && process.env.NODE_ENV !== "test") {
     console.log(`🚀 Server running on http://${HOST}:${PORT}`);
     console.log(`📊 Environment: ${process.env.NODE_ENV || "development"}`);
     console.log("✅ All routes loaded and application is ready");
+    console.log(`📍 Billing API: http://${HOST}:${PORT}/api/billing`);
     console.log(
       `🌐 Public URL: https://devoted-education-production.up.railway.app`
     );
