@@ -32,13 +32,7 @@ const app = express();
 // ✅ ENHANCED CORS Configuration for Railway
 app.use(
   cors({
-    origin: [
-      "http://localhost:3000",
-      "http://localhost:5173",
-      "https://devoted-education-production.up.railway.app",
-      "https://*.railway.app",
-      "https://*.vercel.app",
-    ],
+    origin: "https://stockwala-frontend.vercel.app",
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
