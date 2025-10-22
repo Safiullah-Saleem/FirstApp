@@ -33,7 +33,7 @@ const app = express();
 app.use(
   cors({
     origin: [
-      "https://stockwala-frontend-f5ps.vercel.app/",
+      "https://stockwala-frontend-f5ps.vercel.app",
       "http://localhost:5173"
     ],
     credentials: true,
