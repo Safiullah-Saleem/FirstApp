@@ -33,7 +33,7 @@ const app = express();
 app.use(
   cors({
     origin: [
-      "https://stockwala-frontend.vercel.app",
+      "https://stockwala-frontend-f5ps.vercel.app/",
       "http://localhost:5173"
     ],
     credentials: true,
@@ -53,10 +53,36 @@ app.use((req, res, next) => {
   next();
 });
 
-// ✅ IMPROVED Database connection test (non-blocking)
-testConnection().catch((error) => {
-  console.error("❌ Database connection test failed:", error.message);
-  // Don't crash the app - continue without database
+// ✅ IMPROVED Database connection test (non-blocking with retry logic)
+const initializeDatabaseAsync = async () => {
+  let retryCount = 0;
+  const maxRetries = 3;
+  const retryDelay = 2000; // 2 seconds
+  
+  while (retryCount < maxRetries) {
+    try {
+      console.log(`🔄 Database connection attempt ${retryCount + 1}/${maxRetries}...`);
+      await testConnection();
+      console.log("✅ Database connection established successfully");
+      return;
+    } catch (error) {
+      retryCount++;
+      console.error(`❌ Database connection attempt ${retryCount} failed:`, error.message);
+      
+      if (retryCount < maxRetries) {
+        console.log(`⏳ Retrying in ${retryDelay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+      } else {
+        console.error("❌ All database connection attempts failed - continuing without database");
+        console.error("💡 The server will continue running, but database operations may fail");
+      }
+    }
+  }
+};
+
+// Start database initialization in background (non-blocking)
+initializeDatabaseAsync().catch((error) => {
+  console.error("❌ Database initialization failed:", error.message);
 });
 
 // ✅ FIXED: Routes mounting - CORRECTED BILLING PATH

@@ -80,9 +80,9 @@ const getLoggingFunction = () => {
 // Enhanced Railway-optimized connection pool configuration
 const getPoolConfig = () => {
   const poolConfig = {
-    max: parseInt(process.env.DB_POOL_MAX) || 10, // Railway recommends 10-20
-    min: parseInt(process.env.DB_POOL_MIN) || 2,
-    acquire: parseInt(process.env.DB_POOL_ACQUIRE) || 60000, // 60s for Railway
+    max: parseInt(process.env.DB_POOL_MAX) || 5, // Reduced for Railway stability
+    min: parseInt(process.env.DB_POOL_MIN) || 1, // Reduced minimum
+    acquire: parseInt(process.env.DB_POOL_ACQUIRE) || 30000, // Reduced to 30s
     idle: parseInt(process.env.DB_POOL_IDLE) || 10000,
     evict: parseInt(process.env.DB_POOL_EVICT) || 1000,
     // Additional Railway-specific pool options
@@ -141,11 +141,14 @@ const initializeDatabase = () => {
         dialectOptions: {
           ssl: sslConfig,
           // Railway-specific connection options
-          connectTimeout: 60000,
-          requestTimeout: 60000,
+          connectTimeout: 30000, // Reduced from 60s to 30s
+          requestTimeout: 30000, // Reduced from 60s to 30s
           // Additional Railway optimizations
           keepAlive: true,
           keepAliveInitialDelayMillis: 0,
+          // Enhanced timeout handling
+          statement_timeout: 30000,
+          idle_in_transaction_session_timeout: 30000,
         },
         logging: logging,
         pool: poolConfig,
@@ -183,8 +186,10 @@ const initializeDatabase = () => {
           dialect: "postgres",
           dialectOptions: {
             ssl: sslConfig,
-            connectTimeout: 60000,
-            requestTimeout: 60000,
+            connectTimeout: 30000,
+            requestTimeout: 30000,
+            statement_timeout: 30000,
+            idle_in_transaction_session_timeout: 30000,
           },
           logging: logging,
           pool: poolConfig,
