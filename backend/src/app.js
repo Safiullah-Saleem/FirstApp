@@ -32,13 +32,15 @@ const app = express();
 // ✅ ENHANCED CORS Configuration for Railway
 app.use(
   cors({
-    origin: "https://stockwala-frontend.vercel.app",
+    origin: [
+      "https://stockwala-frontend.vercel.app",
+      "http://localhost:5173"
+    ],
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
   })
 );
-
 // Middleware
 app.use(bodyParser.json({ limit: "10mb" }));
 app.use(bodyParser.urlencoded({ extended: true, limit: "10mb" }));
