@@ -615,10 +615,47 @@ const getItem = async (req, res) => {
     const { id } = req.params;
     const { company_code } = req.query;
 
+    // Validate id to prevent NaN queries
+    if (typeof id === 'undefined' || id === null || id === '') {
+      return res.status(400).json({
+        response: {
+          status: {
+            statusCode: 400,
+            statusMessage: "Invalid item ID",
+          },
+          data: null,
+        },
+      });
+    }
+
+    const orConditions = [];
+
+    // Only add id condition if it's a valid number
+    if (!isNaN(id)) {
+      orConditions.push({ id: parseInt(id) });
+    }
+
+    // Add _id and barCode conditions if id is a string
+    if (typeof id === 'string') {
+      orConditions.push({ _id: id }, { barCode: id });
+    }
+
+    if (orConditions.length === 0) {
+      return res.status(400).json({
+        response: {
+          status: {
+            statusCode: 400,
+            statusMessage: "Invalid item ID format",
+          },
+          data: null,
+        },
+      });
+    }
+
     const item = await Item.findOne({
       where: {
         ...(company_code ? { company_code } : {}),
-        [Op.or]: [{ id: id }, { _id: id }, { barCode: id }],
+        [Op.or]: orConditions,
       },
     });
 
@@ -1022,12 +1059,37 @@ const deleteItem = async (req, res) => {
       }
     }
 
-    if (!itemId) {
+    // Validate itemId to prevent NaN queries
+    if (typeof itemId === 'undefined' || itemId === null || itemId === '') {
       return res.status(400).json({
         response: {
           status: {
             statusCode: 400,
-            statusMessage: "Item ID is required",
+            statusMessage: "Invalid item ID",
+          },
+          data: null,
+        },
+      });
+    }
+
+    const orConditions = [];
+
+    // Only add id condition if it's a valid number
+    if (!isNaN(itemId)) {
+      orConditions.push({ id: parseInt(itemId) });
+    }
+
+    // Add _id and barCode conditions if itemId is a string
+    if (typeof itemId === 'string') {
+      orConditions.push({ _id: itemId }, { barCode: itemId });
+    }
+
+    if (orConditions.length === 0) {
+      return res.status(400).json({
+        response: {
+          status: {
+            statusCode: 400,
+            statusMessage: "Invalid item ID format",
           },
           data: null,
         },
@@ -1035,7 +1097,7 @@ const deleteItem = async (req, res) => {
     }
 
     const where = {
-      [Op.or]: [{ _id: itemId }, { barCode: itemId }, { id: itemId }],
+      [Op.or]: orConditions,
       ...(companyCode ? { company_code: companyCode } : {}),
     };
 
