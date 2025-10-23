@@ -634,7 +634,7 @@ const getLedgerHistory = async (data, res) => {
     
     try {
       // ✅ FIXED: Use correct path to purchase model
-      const Purchase = require('./purchase.model'); // Adjust path if needed
+      const Purchase = require('../billing/purchase.model');
       
       purchases = await Purchase.findAll({
         where: { ledger_id: _id },
