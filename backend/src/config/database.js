@@ -80,10 +80,10 @@ const getLoggingFunction = () => {
 // Enhanced Railway-optimized connection pool configuration
 const getPoolConfig = () => {
   const poolConfig = {
-    max: parseInt(process.env.DB_POOL_MAX) || 5, // Reduced for Railway stability
-    min: parseInt(process.env.DB_POOL_MIN) || 1, // Reduced minimum
-    acquire: parseInt(process.env.DB_POOL_ACQUIRE) || 30000, // Reduced to 30s
-    idle: parseInt(process.env.DB_POOL_IDLE) || 10000,
+    max: parseInt(process.env.DB_POOL_MAX) || 3, // Reduced for Railway stability (Railway has connection limits)
+    min: parseInt(process.env.DB_POOL_MIN) || 0, // Start with 0 for Railway efficiency
+    acquire: parseInt(process.env.DB_POOL_ACQUIRE) || 20000, // Reduced to 20s for Railway
+    idle: parseInt(process.env.DB_POOL_IDLE) || 5000, // Reduced idle time
     evict: parseInt(process.env.DB_POOL_EVICT) || 1000,
     // Additional Railway-specific pool options
     handleDisconnects: true,
@@ -91,6 +91,12 @@ const getPoolConfig = () => {
       // Validate connection before use
       return client && !client._ending && !client._destroyed;
     },
+    // Railway-specific optimizations
+    createTimeoutMillis: 20000,
+    destroyTimeoutMillis: 5000,
+    reapIntervalMillis: 1000,
+    createRetryIntervalMillis: 200,
+    propagateCreateError: false,
   };
   
   // Log pool configuration for debugging
@@ -109,16 +115,16 @@ const getSSLConfig = () => {
     const sslConfig = {
       require: true, // ✅ Required by Railway
       rejectUnauthorized: false, // ✅ Prevents SSL certificate errors on Railway
+      // Additional Railway-specific SSL options
+      sslmode: 'require',
+      ssl: true,
+      // Enhanced SSL configuration for Railway
+      checkServerIdentity: () => true, // Function that always returns true
+      secureProtocol: 'TLSv1_2_method',
     };
     
-    // Add additional Railway-specific SSL options
-    if (process.env.NODE_ENV === 'production') {
-      sslConfig.sslmode = 'require';
-      sslConfig.ssl = true;
-    }
-    
     // Log SSL configuration for debugging
-    console.log(`🔒 SSL Configuration: require=${sslConfig.require}, rejectUnauthorized=${sslConfig.rejectUnauthorized}`);
+    console.log(`🔒 SSL Configuration: require=${sslConfig.require}, rejectUnauthorized=${sslConfig.rejectUnauthorized}, sslmode=${sslConfig.sslmode}`);
     
     return sslConfig;
   } else {
@@ -154,20 +160,25 @@ const initializeDatabase = () => {
         dialectOptions: {
           ssl: sslConfig,
           // Railway-specific connection options
-          connectTimeout: 30000, // Reduced from 60s to 30s
-          requestTimeout: 30000, // Reduced from 60s to 30s
+          connectTimeout: 20000, // Reduced to 20s for Railway
+          requestTimeout: 20000, // Reduced to 20s for Railway
           // Additional Railway optimizations
           keepAlive: true,
           keepAliveInitialDelayMillis: 0,
-          // Enhanced timeout handling
-          statement_timeout: 30000,
-          idle_in_transaction_session_timeout: 30000,
+          // Enhanced timeout handling for Railway
+          statement_timeout: 20000,
+          idle_in_transaction_session_timeout: 20000,
+          // Railway-specific connection parameters
+          application_name: 'railway-app',
+          // Additional Railway optimizations
+          binary: false,
+          parseInputDatesAsUTC: true,
         },
         logging: logging,
         pool: poolConfig,
         // Enhanced Railway-specific connection options
         retry: {
-          max: 3,
+          max: 5, // Increased retry attempts for Railway
           match: [
             /ConnectionError/,
             /SequelizeConnectionError/,
@@ -179,16 +190,28 @@ const initializeDatabase = () => {
             /timeout/,
             /ECONNRESET/,
             /ENOTFOUND/,
+            /ETIMEDOUT/,
+            /ECONNREFUSED/,
+            /SSL/,
+            /certificate/,
           ],
+          backoffBase: 1000,
+          backoffExponent: 1.5,
         },
         // Railway-specific query options
         define: {
           timestamps: true,
           underscored: true,
         },
+        // Additional Railway optimizations
+        benchmark: false,
+        queryType: 'SELECT',
+        isolationLevel: 'READ_COMMITTED',
       });
     } else {
       // Individual environment variables fallback
+      console.log("🚀 Using individual environment variables for connection");
+      
       sequelize = new Sequelize(
         process.env.DB_NAME,
         process.env.DB_USER,
@@ -199,15 +222,18 @@ const initializeDatabase = () => {
           dialect: "postgres",
           dialectOptions: {
             ssl: sslConfig,
-            connectTimeout: 30000,
-            requestTimeout: 30000,
-            statement_timeout: 30000,
-            idle_in_transaction_session_timeout: 30000,
+            connectTimeout: 20000,
+            requestTimeout: 20000,
+            statement_timeout: 20000,
+            idle_in_transaction_session_timeout: 20000,
+            application_name: 'local-app',
+            binary: false,
+            parseInputDatesAsUTC: true,
           },
           logging: logging,
           pool: poolConfig,
           retry: {
-            max: 3,
+            max: 5,
             match: [
               /ConnectionError/,
               /SequelizeConnectionError/,
@@ -216,7 +242,20 @@ const initializeDatabase = () => {
               /SequelizeHostNotReachableError/,
               /SequelizeInvalidConnectionError/,
               /SequelizeConnectionTimedOutError/,
+              /timeout/,
+              /ECONNRESET/,
+              /ENOTFOUND/,
+              /ETIMEDOUT/,
+              /ECONNREFUSED/,
+              /SSL/,
+              /certificate/,
             ],
+            backoffBase: 1000,
+            backoffExponent: 1.5,
+          },
+          define: {
+            timestamps: true,
+            underscored: true,
           },
         }
       );

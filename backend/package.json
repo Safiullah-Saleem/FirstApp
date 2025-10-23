@@ -8,8 +8,11 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "test-db": "node test-db-connection.js",
     "migrate": "node migrate-database.js",
-    "db:check": "node check-database.js",
-    "db:reset": "node migrate-database.js --force"
+    "db:check": "node test-db-connection.js",
+    "db:debug": "node debug-railway-db.js",
+    "db:reset": "node migrate-database.js --force",
+    "railway:test": "NODE_ENV=production node test-db-connection.js",
+    "railway:migrate": "NODE_ENV=production node migrate-database.js"
   },
   "keywords": [],
   "author": "",
