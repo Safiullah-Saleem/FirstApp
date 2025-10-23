@@ -1,111 +1,72 @@
-const { sequelize } = require("./src/config/database");
+// migrate-with-model.js
+const Purchase = require('./src/billing/purchase.model'); // Adjust path as needed
+const { sequelize } = require('./src/config/database');
 
-async function migrateDatabase() {
+async function migrateWithModel() {
   try {
-    console.log("🔄 Starting database migration...");
+    console.log("🔄 Starting migration using Purchase model...");
     
-    // Add new columns to transactions table
-    await sequelize.query(`
-      ALTER TABLE transactions 
-      ADD COLUMN IF NOT EXISTS payment_method VARCHAR(50),
-      ADD COLUMN IF NOT EXISTS bank_id BIGINT,
-      ADD COLUMN IF NOT EXISTS cheque_number VARCHAR(255);
-    `);
-    
-    console.log("✅ Added payment_method, bank_id, cheque_number columns to transactions table");
-    
-    // Create banks table
-    await sequelize.query(`
-      CREATE TABLE IF NOT EXISTS banks (
-        id BIGSERIAL PRIMARY KEY,
-        company_code VARCHAR(255) NOT NULL,
-        name VARCHAR(255) NOT NULL,
-        account_number VARCHAR(255),
-        branch VARCHAR(255),
-        opening_balance DECIMAL(18,2) DEFAULT 0,
-        balance DECIMAL(18,2) DEFAULT 0,
-        created_at BIGINT DEFAULT EXTRACT(EPOCH FROM NOW()),
-        modified_at BIGINT DEFAULT EXTRACT(EPOCH FROM NOW())
-      );
-    `);
-    
-    console.log("✅ Created banks table");
-    
-    // Add ledger_id column to sales table if it doesn't exist
-    await sequelize.query(`
-      ALTER TABLE sales
-      ADD COLUMN IF NOT EXISTS ledger_id UUID DEFAULT NULL;
-    `);
+    // Test connection
+    await sequelize.authenticate();
+    console.log("✅ Database connection established");
 
-    console.log("✅ Added ledger_id column to sales table");
+    // Sync the Purchase model to create the table
+    await Purchase.sync({ force: false }); // force: false prevents dropping existing table
+    console.log("✅ Purchase table synced successfully");
 
-    // Note: purchases table doesn't exist yet, will be created when purchase model is used
+    // Check if sample data exists
+    const existingPurchases = await Purchase.count({
+      where: { 
+        ledger_id: '92abf1fd-b16a-4661-8791-5814fc29b11e' 
+      }
+    });
 
-    // Add indexes for performance
-    await sequelize.query(`
-      CREATE INDEX IF NOT EXISTS idx_transactions_payment_method ON transactions(payment_method);
-      CREATE INDEX IF NOT EXISTS idx_transactions_bank_id ON transactions(bank_id);
-      CREATE INDEX IF NOT EXISTS idx_banks_company_code ON banks(company_code);
-      CREATE INDEX IF NOT EXISTS idx_banks_name ON banks(name);
-      CREATE INDEX IF NOT EXISTS idx_sales_ledger_id ON sales(ledger_id);
-    `);
-    
-    console.log("✅ Added indexes for performance");
-
-    // Check if cash_accounts table exists and has the correct structure
-    const tableCheck = await sequelize.query(`
-      SELECT column_name FROM information_schema.columns
-      WHERE table_name = 'cash_accounts'
-    `);
-
-    const existingColumns = tableCheck[0].map(col => col.column_name);
-
-    if (existingColumns.length === 0) {
-      // Table doesn't exist, create it
-      await sequelize.query(`
-        CREATE TABLE cash_accounts (
-          _id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-          company_code VARCHAR(255) NOT NULL,
-          cash_name VARCHAR(255) NOT NULL DEFAULT 'cashInHand',
-          balance DECIMAL(15,2) DEFAULT 0.00,
-          date DATE DEFAULT CURRENT_DATE,
-          description TEXT DEFAULT '',
-          created_at BIGINT DEFAULT EXTRACT(EPOCH FROM NOW()),
-          modified_at BIGINT DEFAULT EXTRACT(EPOCH FROM NOW())
-        );
-      `);
-      console.log("✅ Created cash_accounts table");
-    } else if (!existingColumns.includes('cash_name')) {
-      // Table exists but is missing cash_name column, drop and recreate
-      await sequelize.query(`DROP TABLE IF EXISTS cash_accounts CASCADE`);
-      await sequelize.query(`
-        CREATE TABLE cash_accounts (
-          _id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-          company_code VARCHAR(255) NOT NULL,
-          cash_name VARCHAR(255) NOT NULL DEFAULT 'cashInHand',
-          balance DECIMAL(15,2) DEFAULT 0.00,
-          date DATE DEFAULT CURRENT_DATE,
-          description TEXT DEFAULT '',
-          created_at BIGINT DEFAULT EXTRACT(EPOCH FROM NOW()),
-          modified_at BIGINT DEFAULT EXTRACT(EPOCH FROM NOW())
-        );
-      `);
-      console.log("✅ Recreated cash_accounts table with correct structure");
+    if (existingPurchases === 0) {
+      console.log("📝 Inserting sample purchase data...");
+      
+      // Create sample purchases using the model
+      await Purchase.bulkCreate([
+        {
+          company_code: '2370',
+          ledger_id: '92abf1fd-b16a-4661-8791-5814fc29b11e',
+          name: 'Mobile Phones Purchase',
+          total_price: 500.00,
+          paid: 0.00,
+          date: '2024-01-15',
+          item_id: 'item_001',
+          purchase_price: 500.00,
+          quantity: 1
+        },
+        {
+          company_code: '2370',
+          ledger_id: '92abf1fd-b16a-4661-8791-5814fc29b11e',
+          name: 'Accessories Purchase',
+          total_price: 300.00,
+          paid: 150.00,
+          date: '2024-01-10',
+          item_id: 'item_002',
+          purchase_price: 300.00,
+          quantity: 1
+        },
+        {
+          company_code: '2370',
+          ledger_id: '92abf1fd-b16a-4661-8791-5814fc29b11e',
+          name: 'Chargers Purchase',
+          total_price: 250.00,
+          paid: 0.00,
+          date: '2024-01-05',
+          item_id: 'item_003',
+          purchase_price: 250.00,
+          quantity: 1
+        }
+      ]);
+      
+      console.log("✅ Sample purchase data inserted using model");
     } else {
-      console.log("✅ cash_accounts table already exists with correct structure");
+      console.log(`✅ Sample data already exists: ${existingPurchases} purchases found`);
     }
 
-    // Add indexes for cash_accounts table
-    await sequelize.query(`
-      CREATE INDEX IF NOT EXISTS idx_cash_accounts_company_code ON cash_accounts(company_code);
-      CREATE INDEX IF NOT EXISTS idx_cash_accounts_cash_name ON cash_accounts(cash_name);
-    `);
-
-    console.log("✅ Added indexes for cash_accounts table");
-
-    console.log("✅ Migration completed - no constraints added for simple text passing");
-    
-    console.log("🎉 Database migration completed successfully!");
+    console.log("🎉 Migration completed successfully!");
     
   } catch (error) {
     console.error("❌ Migration failed:", error.message);
@@ -113,17 +74,17 @@ async function migrateDatabase() {
   }
 }
 
-// Run migration if called directly
+// Run if called directly
 if (require.main === module) {
-  migrateDatabase()
+  migrateWithModel()
     .then(() => {
-      console.log("✅ Migration completed successfully");
+      console.log("✅ Migration script completed");
       process.exit(0);
     })
     .catch((error) => {
-      console.error("❌ Migration failed:", error);
+      console.error("❌ Migration script failed:", error);
       process.exit(1);
     });
 }
 
-module.exports = migrateDatabase;
+module.exports = migrateWithModel;

@@ -101,22 +101,31 @@ const getPoolConfig = () => {
 
 // Enhanced Railway-specific SSL configuration
 const getSSLConfig = () => {
-  // Railway PostgreSQL requires SSL connections
-  const sslConfig = {
-    require: true, // ✅ Required by Railway
-    rejectUnauthorized: false, // ✅ Prevents SSL certificate errors on Railway
-  };
+  // Check if using Railway (DATABASE_URL set) or production
+  const requiresSSL = process.env.DATABASE_URL || process.env.NODE_ENV === 'production';
   
-  // Add additional Railway-specific SSL options
-  if (process.env.NODE_ENV === 'production') {
-    sslConfig.sslmode = 'require';
-    sslConfig.ssl = true;
+  if (requiresSSL) {
+    // Railway PostgreSQL requires SSL connections
+    const sslConfig = {
+      require: true, // ✅ Required by Railway
+      rejectUnauthorized: false, // ✅ Prevents SSL certificate errors on Railway
+    };
+    
+    // Add additional Railway-specific SSL options
+    if (process.env.NODE_ENV === 'production') {
+      sslConfig.sslmode = 'require';
+      sslConfig.ssl = true;
+    }
+    
+    // Log SSL configuration for debugging
+    console.log(`🔒 SSL Configuration: require=${sslConfig.require}, rejectUnauthorized=${sslConfig.rejectUnauthorized}`);
+    
+    return sslConfig;
+  } else {
+    // Local development - disable SSL
+    console.log(`🔒 SSL Configuration: disabled for local development`);
+    return false;
   }
-  
-  // Log SSL configuration for debugging
-  console.log(`🔒 SSL Configuration: require=${sslConfig.require}, rejectUnauthorized=${sslConfig.rejectUnauthorized}`);
-  
-  return sslConfig;
 };
 
 // Initialize database connection
@@ -130,7 +139,11 @@ const initializeDatabase = () => {
     
     console.log("🔧 Initializing database connection...");
     console.log(`📊 Pool config: max=${poolConfig.max}, min=${poolConfig.min}`);
-    console.log(`🔒 SSL: required=${sslConfig.require}, rejectUnauthorized=${sslConfig.rejectUnauthorized}`);
+    if (sslConfig) {
+      console.log(`🔒 SSL: required=${sslConfig.require}, rejectUnauthorized=${sslConfig.rejectUnauthorized}`);
+    } else {
+      console.log(`🔒 SSL: disabled`);
+    }
     
     if (process.env.DATABASE_URL) {
       // Railway DATABASE_URL format: postgresql://user:password@host:port/database
