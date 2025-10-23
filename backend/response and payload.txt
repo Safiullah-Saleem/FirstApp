@@ -1,0 +1,1855 @@
+Admin 
+POST http://localhost:8000/api/users/signup
+
+payload :
+
+{
+  "email": "admin@example.com",
+  "password": "password123",
+  "name": "Admin User",
+  "role": "admin"
+}
+
+POST http://localhost:8000/api/users/login 
+
+payload:
+
+{
+  "email": "admin@example.com",
+  "password": "password123"
+} 
+
+response:
+
+{
+    "response": {
+        "status": {
+            "statusCode": 200,
+            "statusMessage": "OK"
+        },
+        "data": {
+            "user": {
+                "_id": "admin@example.com",
+                "_rev": "1-19",
+                "company_name": "Updated Company LLC",
+                "address": "456 Updated Street, Updated City, State 67890",
+                "phone": "+1234567890",
+                "email": "admin@example.com",
+                "name": "Updated Admin Name",
+                "company_code": "4150",
+                "isTrial": true,
+                "isPaid": false,
+                "created_at": "1760987732",
+                "modified_at": 1760991105,
+                "featuresAccess": [],
+                "imgURL": "https://managekaro-documents.s3.us-west-2.amazonaws.com/4150/default-avatar.png",
+                "base_url": "",
+                "gst": 0,
+                "terms_conditions": "",
+                "role": "company_admin"
+            },
+            "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTksImVtYWlsIjoiYWRtaW5AZXhhbXBsZS5jb20iLCJjb21wYW55X2NvZGUiOiI0MTUwIiwidHlwZSI6InVzZXIiLCJpYXQiOjE3NjA5OTExMDUsImV4cCI6MTc2MzU4MzEwNX0.p-si0AtTiRwlcSZ4L7SnGWE_e6A8hQ9EqJYSF7Eu5mw"
+        }
+    }
+}
+
+GET http://localhost:8000/api/users/profile/me 
+
+Employess Register 
+
+post : http://localhost:8000/api/employees/register
+
+Authorization : eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTksImVtYWlsIjoiYWRtaW5AZXhhbXBsZS5jb20iLCJjb21wYW55X2NvZGUiOiI0MTUwIiwidHlwZSI6InVzZXIiLCJpYXQiOjE3NjA5ODc3NjYsImV4cCI6MTc2MzU3OTc2Nn0.oJogmw6Cejqvk6GHlP6IEpGD9KFtA2a-W-3bHYbbxIc
+
+payload : 
+
+{
+  "employee": {
+    "username": "safiullahbhai",
+    "email": "safi@company.com", 
+    "password": "password1234",
+    "phone": "+1234567999",
+    "address": "123 ggft, Final City",
+    "position": "Developer coder", 
+    "department": "IT",
+    "role": "employee",
+    "status": "active"
+  }
+}
+
+response : 
+
+{
+    "response": {
+        "status": {
+            "statusCode": 200,
+            "statusMessage": "Employee created successfully"
+        },
+        "data": {
+            "employee": {
+                "_id": "6398",
+                "_rev": "1-5",
+                "username": "safiullahbhai",
+                "email": "safi@company.com",
+                "phone": "+1234567999",
+                "department": "IT",
+                "position": "Developer coder",
+                "role": "employee",
+                "status": "active",
+                "join_date": "1760990653",
+                "company_code": "4150",
+                "company_name": "Updated Company LLC",
+                "access": [
+                    "Dashboard"
+                ],
+                "ledgerRegions": [],
+                "address": "123 ggft, Final City",
+                "imgURL": "",
+                "base_url": "",
+                "featuresAccess": [
+                    {
+                        "index": 0,
+                        "selected": true,
+                        "price": 1000,
+                        "description": "",
+                        "title": "Dashboard",
+                        "infoBtn": false,
+                        "card": "",
+                        "selectCard": "/static/media/dashboardG.632e3da4.svg",
+                        "paid": false,
+                        "url": "dashboard",
+                        "cardWhite": "/static/media/dashboardWhite.fe5f6a4a.svg"
+                    }
+                ],
+                "created_at": "1760990653",
+                "modified_at": "1760990653",
+                "message": "Employee created successfully",
+                "success": true,
+                "timestamp": 1760990653,
+                "error": null,
+                "data": "Employee data retrieved successfully"
+            }
+        }
+    }
+}
+
+
+
+Get Company Employees (GET) - Protected
+
+
+GET http://localhost:8000/api/employees/
+
+Authorization: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTksImVtYWlsIjoiYWRtaW5AZXhhbXBsZS5jb20iLCJjb21wYW55X2NvZGUiOiI0MTUwIiwidHlwZSI6InVzZXIiLCJpYXQiOjE3NjA5OTExMDUsImV4cCI6MTc2MzU4MzEwNX0.p-si0AtTiRwlcSZ4L7SnGWE_e6A8hQ9EqJYSF7Eu5mw
+
+
+
+Get Employee by ID (GET) - Protected
+
+
+GET http://localhost:8000/api/employees/6398
+Authorization: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTksImVtYWlsIjoiYWRtaW5AZXhhbXBsZS5jb20iLCJjb21wYW55X2NvZGUiOiI0MTUwIiwidHlwZSI6InVzZXIiLCJpYXQiOjE3NjA5OTExMDUsImV4cCI6MTc2MzU4MzEwNX0.p-si0AtTiRwlcSZ4L7SnGWE_e6A8hQ9EqJYSF7Eu5mw
+
+
+
+
+
+response :
+
+{
+    "response": {
+        "status": {
+            "statusCode": 200,
+            "statusMessage": "OK"
+        },
+        "data": {
+            "employee": {
+                "_id": "6398",
+                "_rev": "1-5",
+                "username": "safiullahbhai",
+                "email": "safi@company.com",
+                "phone": "+1234567999",
+                "department": "IT",
+                "position": "Developer coder",
+                "role": "employee",
+                "status": "active",
+                "join_date": "1760990653",
+                "company_code": "4150",
+                "company_name": "Updated Company LLC",
+                "access": [
+                    "Dashboard"
+                ],
+                "ledgerRegions": [],
+                "address": "123 ggft, Final City",
+                "imgURL": "",
+                "base_url": "",
+                "featuresAccess": [
+                    {
+                        "index": 0,
+                        "selected": true,
+                        "price": 1000,
+                        "description": "",
+                        "title": "Dashboard",
+                        "infoBtn": false,
+                        "card": "",
+                        "selectCard": "/static/media/dashboardG.632e3da4.svg",
+                        "paid": false,
+                        "url": "dashboard",
+                        "cardWhite": "/static/media/dashboardWhite.fe5f6a4a.svg"
+                    }
+                ],
+                "created_at": "1760990653",
+                "modified_at": "1760990653",
+                "message": "Employee created successfully",
+                "success": true,
+                "timestamp": 1760991782,
+                "error": null,
+                "data": "Employee data retrieved successfully"
+            }
+        }
+    }
+}
+
+
+
+
+Update Employee (PUT) - Protected
+
+PUT http://localhost:8000/api/employees/6398
+
+Authorization: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTksImVtYWlsIjoiYWRtaW5AZXhhbXBsZS5jb20iLCJjb21wYW55X2NvZGUiOiI0MTUwIiwidHlwZSI6InVzZXIiLCJpYXQiOjE3NjA5OTExMDUsImV4cCI6MTc2MzU4MzEwNX0.p-si0AtTiRwlcSZ4L7SnGWE_e6A8hQ9EqJYSF7Eu5mw 
+
+
+payload :
+
+{
+  "name": "John Doe Updated",
+  "position": "Senior Sales Manager",
+  "salary": 60000,
+  "phone": "+1234567890",
+  "address": "456 Updated St, City, State"
+} 
+
+response :
+
+{
+    "response": {
+        "status": {
+            "statusCode": 200,
+            "statusMessage": "Employee updated successfully"
+        },
+        "data": {
+            "employee": {
+                "_id": "6398",
+                "_rev": "1-5",
+                "username": "safiullahbhai",
+                "email": "safi@company.com",
+                "phone": "+1234567890",
+                "department": "IT",
+                "position": "Senior Sales Manager",
+                "role": "employee",
+                "status": "active",
+                "join_date": "1760990653",
+                "company_code": "4150",
+                "company_name": "Updated Company LLC",
+                "access": [
+                    "Dashboard"
+                ],
+                "ledgerRegions": [],
+                "address": "456 Updated St, City, State",
+                "imgURL": "",
+                "base_url": "",
+                "featuresAccess": [
+                    {
+                        "index": 0,
+                        "selected": true,
+                        "price": 1000,
+                        "description": "",
+                        "title": "Dashboard",
+                        "infoBtn": false,
+                        "card": "",
+                        "selectCard": "/static/media/dashboardG.632e3da4.svg",
+                        "paid": false,
+                        "url": "dashboard",
+                        "cardWhite": "/static/media/dashboardWhite.fe5f6a4a.svg"
+                    }
+                ],
+                "created_at": "1760990653",
+                "modified_at": "1760991999",
+                "message": "Employee created successfully",
+                "success": true,
+                "timestamp": 1760991999,
+                "error": null,
+                "data": "Employee data retrieved successfully"
+            }
+        }
+    }
+}   
+
+
+
+Delete Employee (DELETE) - Protected 
+
+GET http://localhost:8000/api/employees/profile/me
+Authorization: Bearer <token> 
+
+
+
+
+PUT http://localhost:8000/api/company/update
+Authorization: Bearer <token> 
+
+payload :
+
+{
+  "name": "Updated Company Name",
+  "address": "123 Business St, City, State",
+  "phone": "+1234567890",
+  "email": "contact@company.com",
+  "website": "https://company.com",
+  "description": "Updated company description"
+} 
+
+
+response :
+
+{
+    "response": {
+        "status": {
+            "statusCode": 200,
+            "statusMessage": "Company settings updated successfully"
+        },
+        "data": {
+            "company": {
+                "_id": "4150",
+                "_rev": "7-19",
+                "access": [],
+                "company_name": "Updated Company",
+                "address": "123 Business St, City, State",
+                "created_at": "1760987732",
+                "modified_at": "1760993327",
+                "featuresAccess": [],
+                "ledgerRegions": [],
+                "stockValue": "no",
+                "billStamp": {},
+                "terms_conditions": "",
+                "gst_number": "",
+                "company_logo": "",
+                "ceo_name": "Updated Company Name",
+                "ceo_email": "contact@company.com",
+                "ceo_phone": "+1234567890",
+                "isTrial": true,
+                "isPaid": false
+            }
+        }
+    }
+}  
+
+
+
+Update Company Password (PUT) - Protected
+
+PUT http://localhost:8000/api/company/update-password
+Authorization: Bearer <token>
+
+{
+  "current_password": "password123",
+  "new_password": "newpassword12345"
+} 
+
+
+
+response
+
+{
+    "response": {
+        "status": {
+            "statusCode": 200,
+            "statusMessage": "Password updated successfully"
+        },
+        "data": null
+    }
+}
+
+
+Get Company by POST (POST) - Protected
+
+POST http://localhost:8000/api/company/getCompany
+Authorization: Bearer <token>
+
+
+
+Get Current Company (GET) - Protected
+
+
+GET http://localhost:8000/api/company/
+Authorization: Bearer <token>
+```
+
+{
+    "response": {
+        "status": {
+            "statusCode": 200,
+            "statusMessage": "OK"
+        },
+        "data": {
+            "company": {
+                "_id": "4150",
+                "_rev": "7-19",
+                "access": [],
+                "company_name": "Updated Company",
+                "address": "123 Business St, City, State",
+                "created_at": "1760987732",
+                "modified_at": "1760994305",
+                "featuresAccess": [],
+                "ledgerRegions": [],
+                "stockValue": "no",
+                "billStamp": {},
+                "terms_conditions": "",
+                "gst_number": "",
+                "company_logo": "",
+                "ceo_name": "Updated Company Name",
+                "ceo_email": "contact@company.com",
+                "ceo_phone": "+1234567890",
+                "isTrial": true,
+                "isPaid": false
+            }
+        }
+    }
+}
+
+
+
+Create Item (POST) - With File Upload
+
+
+POST http://localhost:8000/api/items/save
+Content-Type: multipart/form-data
+Authorization: Bearer <token>
+
+{
+  "name": "Product Name",
+  "description": "Product Description", 
+  "category": "Electronics",
+  "price": 99.99,
+  "quantity": 100,
+  "company_code": "4150",
+  "sku": "PROD001",
+  "supplier": "Supplier Name",
+  "minStockLevel": 10,
+  "maxStockLevel": 1000
+} 
+
+
+
+{
+    "response": {
+        "status": {
+            "statusCode": 200,
+            "statusMessage": "Item saved successfully"
+        },
+        "data": {
+            "item": {
+                "minquantity": 0,
+                "status": "Active",
+                "weightType": false,
+                "boxes": 0,
+                "packing": 0,
+                "totalBoxes": 0,
+                "box": false,
+                "piecesPerBox": 0,
+                "batchNumber": [],
+                "imeiNumbers": [],
+                "created_at": "1760994673",
+                "modified_at": "1760994673",
+                "id": 31,
+                "name": "Product Name",
+                "description": "Product Description",
+                "category": "Electronics",
+                "price": "99.99",
+                "quantity": 100,
+                "company_code": "4150",
+                "_id": "991f5634ef0490946aadb5c59fbe6f0c",
+                "weight": "0.00",
+                "discount": "0.00",
+                "pricePerPiece": "0.00",
+                "action": "Created",
+                "user": "system"
+            }
+        }
+    }
+}
+
+
+
+Get All Items (GET) 
+
+GET http://localhost:8000/api/items?company_code=4150
+
+Authorization: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTksImVtYWlsIjoiYWRtaW5AZXhhbXBsZS5jb20iLCJjb21wYW55X2NvZGUiOiI0MTUwIiwidHlwZSI6InVzZXIiLCJpYXQiOjE3NjA5OTExMDUsImV4cCI6MTc2MzU4MzEwNX0.p-si0AtTiRwlcSZ4L7SnGWE_e6A8hQ9EqJYSF7Eu5mw
+
+
+{
+    "response": {
+        "status": {
+            "statusCode": 200,
+            "statusMessage": "OK"
+        },
+        "data": {
+            "items": [
+                {
+                    "id": 32,
+                    "_id": "a2ce1535e401e4fca188b8119d02bf08",
+                    "name": "iPhone 15 Pro",
+                    "description": "Latest Apple smartphone with advanced camera",
+                    "price": "999.99",
+                    "discount": "0.00",
+                    "quantity": 50,
+                    "minquantity": 0,
+                    "category": "Electronics",
+                    "status": "Active",
+                    "company_code": "4150",
+                    "weight": "0.00",
+                    "weightType": false,
+                    "boxes": 0,
+                    "packing": 0,
+                    "totalBoxes": 0,
+                    "box": false,
+                    "piecesPerBox": 0,
+                    "pricePerPiece": "0.00",
+                    "batchNumber": [],
+                    "imeiNumbers": [],
+                    "created_at": "1760995180",
+                    "modified_at": "1760995180"
+                },
+                {
+                    "id": 31,
+                    "_id": "991f5634ef0490946aadb5c59fbe6f0c",
+                    "name": "Product Name",
+                    "description": "Product Description",
+                    "price": "99.99",
+                    "discount": "0.00",
+                    "quantity": 100,
+                    "minquantity": 0,
+                    "category": "Electronics",
+                    "status": "Active",
+                    "company_code": "4150",
+                    "weight": "0.00",
+                    "weightType": false,
+                    "boxes": 0,
+                    "packing": 0,
+                    "totalBoxes": 0,
+                    "box": false,
+                    "piecesPerBox": 0,
+                    "pricePerPiece": "0.00",
+                    "batchNumber": [],
+                    "imeiNumbers": [],
+                    "created_at": "1760994673",
+                    "modified_at": "1760994673"
+                }
+            ]
+        }
+    }
+} 
+
+
+
+Get Item by ID (GET)
+
+GET http://localhost:8000/api/items/32
+
+{
+    "response": {
+        "status": {
+            "statusCode": 200,
+            "statusMessage": "OK"
+        },
+        "data": {
+            "item": {
+                "id": 32,
+                "_id": "a2ce1535e401e4fca188b8119d02bf08",
+                "name": "iPhone 15 Pro",
+                "description": "Latest Apple smartphone with advanced camera",
+                "price": "999.99",
+                "discount": "0.00",
+                "quantity": 50,
+                "minquantity": 0,
+                "category": "Electronics",
+                "status": "Active",
+                "company_code": "4150",
+                "weight": "0.00",
+                "weightType": false,
+                "boxes": 0,
+                "packing": 0,
+                "totalBoxes": 0,
+                "box": false,
+                "piecesPerBox": 0,
+                "pricePerPiece": "0.00",
+                "batchNumber": [],
+                "imeiNumbers": [],
+                "created_at": "1760995180",
+                "modified_at": "1760995180"
+            }
+        }
+    }
+}
+
+
+
+Update Item (PUT)
+
+
+PUT http://localhost:8000/api/items/update
+
+
+
+{
+  "_id": "991f5634ef0490946aadb5c59fbe6f0c",
+  "name": "Updated Product Name",
+  "description": "Updated Description",
+  "category": "Electronics",
+  "price": 129.99,
+  "quantity": 150,
+  "sku": "PROD001",
+  "supplier": "Updated Supplier",
+  "minStockLevel": 15,
+  "maxStockLevel": 1500,
+  "company_code": "4150"
+} 
+
+
+{
+    "response": {
+        "status": {
+            "statusCode": 200,
+            "statusMessage": "Item updated successfully"
+        },
+        "data": {
+            "item": {
+                "id": 31,
+                "_id": "991f5634ef0490946aadb5c59fbe6f0c",
+                "name": "Updated Product Name",
+                "description": "Updated Description",
+                "price": 129.99,
+                "discount": 0,
+                "quantity": 150,
+                "minquantity": 0,
+                "category": "Electronics",
+                "status": "Active",
+                "company_code": "4150",
+                "weight": 0,
+                "weightType": false,
+                "boxes": 0,
+                "packing": 0,
+                "totalBoxes": 0,
+                "box": false,
+                "piecesPerBox": 0,
+                "pricePerPiece": 0,
+                "batchNumber": [],
+                "imeiNumbers": [],
+                "created_at": "1760994673",
+                "modified_at": 1760995643
+            }
+        }
+    }
+}
+
+
+
+
+5. Delete Item (POST)
+
+
+POST http://localhost:8000/api/items/delete
+
+
+{
+  "_id": "32"
+}
+
+
+{
+    "response": {
+        "status": {
+            "statusCode": 200,
+            "statusMessage": "Item deleted successfully"
+        },
+        "data": {
+            "id": "32"
+        }
+    }
+}
+
+
+
+Delete Item by ID (DELETE)
+
+DELETE http://localhost:8000/api/items/31
+
+
+{
+    "response": {
+        "status": {
+            "statusCode": 200,
+            "statusMessage": "Item deleted successfully"
+        },
+        "data": {
+            "id": "31"
+        }
+    }
+} 
+
+
+
+
+Get Inventory (GET)
+
+
+GET http://localhost:8000/api/items?company_code=4150
+
+
+
+{
+    "response": {
+        "status": {
+            "statusCode": 200,
+            "statusMessage": "OK"
+        },
+        "data": {
+            "items": []
+        }
+    }
+}
+
+
+
+Get Inventory (POST)
+
+POST http://localhost:8000/api/items/inventory
+{
+  "company_code": "4150",
+  "category": "Electronics", 
+  "lowStock": true
+} 
+
+
+{
+    "response": {
+        "status": {
+            "statusCode": 200,
+            "statusMessage": "OK"
+        },
+        "data": {
+            "inventory": [
+                {
+                    "id": 33,
+                    "_id": "71453630b9f43a4efd613d9e617d62e9",
+                    "name": "iPhone 15 Pro",
+                    "description": "Latest Apple smartphone",
+                    "price": "999.99",
+                    "discount": "0.00",
+                    "quantity": 10,
+                    "minquantity": 0,
+                    "category": "Electronics",
+                    "status": "Active",
+                    "company_code": "4150",
+                    "weight": "0.00",
+                    "weightType": false,
+                    "boxes": 0,
+                    "packing": 0,
+                    "totalBoxes": 0,
+                    "box": false,
+                    "piecesPerBox": 0,
+                    "pricePerPiece": "0.00",
+                    "batchNumber": [],
+                    "imeiNumbers": [],
+                    "created_at": "1760996595",
+                    "modified_at": "1760996595"
+                }
+            ]
+        }
+    }
+}
+
+
+
+Save Bills (POST)
+
+
+POST http://localhost:8000/api/billing/saveBills
+{
+  "company_code": "4150",
+  "customer": "Test Customer",
+  "items": [
+    {
+      "id": 36,
+      "name": "Wireless Bluetooth Headphones",
+      "saleQuantity": 1,
+      "salePrice": 149.99,
+      "costPrice": 89.99
+    }
+  ],
+  "subTotal": 149.99,
+  "total": 149.99,
+  "paid": 150,
+  "change": 0.01
+}
+
+
+{
+    "response": {
+        "status": {
+            "statusCode": 200,
+            "statusMessage": "Bill saved successfully"
+        },
+        "data": {
+            "billId": 16,
+            "billNumber": 1,
+            "message": "Bill and inventory updated successfully"
+        }
+    }
+} 
+
+
+
+
+Save Sale (POST)
+
+POST http://localhost:8000/api/billing/saveSale
+
+
+
+[
+  {
+    "company_code": "4150",
+    "item_id": "36",
+    "name": "Product Name",
+    "quantity": 1,
+    "sale_price": 75.00,
+    "cost_price": 50.00,
+    "total_price": 75.00,
+    "discount": 0,
+    "date": "2023-12-20"
+  }
+] 
+
+
+{
+    "response": {
+        "status": {
+            "statusCode": 200,
+            "statusMessage": "Sales saved successfully"
+        },
+        "data": {
+            "sales": [
+                {
+                    "saleId": 22,
+                    "itemId": "36",
+                    "itemName": "Product Name"
+                }
+            ],
+            "message": "Sales and inventory updated successfully"
+        }
+    }
+}
+
+
+
+Update sale 
+
+PUT http://localhost:8000/api/billing/sale/24 
+
+{
+  "quantity": 2,
+  "sale_price": 80.00,
+  "total_price": 160.00,
+  "discount": 10.00
+}
+
+
+{
+    "response": {
+        "status": {
+            "statusCode": 200,
+            "statusMessage": "Sale updated successfully"
+        },
+        "data": {
+            "sale": {
+                "id": 24,
+                "bill_id": null,
+                "company_code": "4150",
+                "item_id": "36",
+                "name": "Product Name",
+                "description": "",
+                "item_code": "",
+                "category": "",
+                "unit": "pcs",
+                "quantity": 2,
+                "sale_price": 80,
+                "cost_price": 0,
+                "total_price": 150,
+                "total_profit": 150,
+                "discount": 10,
+                "vendor": "",
+                "selected_imei": "",
+                "batch_number": "",
+                "sale_type": "pieces",
+                "date": "2023-12-20",
+                "timestamp": "1761004630",
+                "read_status": false,
+                "min_quantity": 0,
+                "img_url": "",
+                "paid": 0,
+                "created_at": "1761004630",
+                "modified_at": 1761004745
+            },
+            "message": "Sale updated successfully"
+        }
+    }
+}
+
+
+
+DELETE http://localhost:8000/api/billing/sale/id 
+
+
+{
+  "company_code": "4150"
+}
+
+
+{
+    "response": {
+        "status": {
+            "statusCode": 200,
+            "statusMessage": "Sale deleted successfully"
+        },
+        "data": {
+            "message": "Sale deleted successfully. Inventory restored."
+        }
+    }
+}
+
+
+
+Create a bank 
+ 
+POST 
+http://localhost:8000/api/bank
+
+{
+  "request": {
+    "method": "saveBank",
+    "data": {
+      "company_code": "4530",
+      "bankName": "HBL Bank",
+      "balance": "50000",
+      "date": "2025-10-22",
+      "accountNumber": "12345678901"
+    }
+  }
+}
+
+
+{
+    "response": {
+        "status": {
+            "statusCode": 200,
+            "statusMessage": "Bank created successfully"
+        },
+        "data": {
+            "bank": "48331b71-2d7b-4b2a-92a4-22b378e7f28f"
+        }
+    }
+} 
+
+
+
+
+
+Update bank
+
+http://localhost:8000/api/bank
+
+
+{
+  "request": {
+    "method": "updateBank",
+    "data": {
+      "_id": "2c3aef9c-ce9b-465c-babc-51e6e3aa1e5e",
+      "bankName": "HBL Bank Updated",
+      "balance": "75000"
+    }
+  }
+}
+
+
+{
+    "response": {
+        "status": {
+            "statusCode": 200,
+            "statusMessage": "Bank updated successfully"
+        },
+        "data": {
+            "bank": "2c3aef9c-ce9b-465c-babc-51e6e3aa1e5e"
+        }
+    }
+} 
+
+Getting bank with company code 
+
+
+
+POST http://localhost:8000/api/bank
+
+{
+  "request": {
+    "method": "getBanksByCompany",
+    "data": {
+      "company_code": "4530"
+    }
+  }
+}
+
+
+
+{
+    "response": {
+        "status": {
+            "statusCode": 200,
+            "statusMessage": "OK"
+        },
+        "data": {
+            "banks": [
+                {
+                    "_id": "2c3aef9c-ce9b-465c-babc-51e6e3aa1e5e",
+                    "company_code": "4530",
+                    "bankName": "HBL Bank Updated",
+                    "balance": "75000.00",
+                    "date": "2025-10-22T00:00:00.000Z",
+                    "accountNumber": "12345678901",
+                    "created_at": "1761079412",
+                    "modified_at": "1761079458"
+                },
+                {
+                    "_id": "19b945df-bed4-4285-b698-b604cc2d4931",
+                    "company_code": "4530",
+                    "bankName": "HBL Bank",
+                    "balance": "50000.00",
+                    "date": "2025-10-22T00:00:00.000Z",
+                    "accountNumber": "12345678901",
+                    "created_at": "1761079312",
+                    "modified_at": "1761079312"
+                },
+                {
+                    "_id": "8179695e-904e-45cc-9b8c-3bfdfd468472",
+                    "company_code": "4530",
+                    "bankName": "HBL Bank",
+                    "balance": "50000.00",
+                    "date": "2025-10-22T00:00:00.000Z",
+                    "accountNumber": "12345678901",
+                    "created_at": "1761079070",
+                    "modified_at": "1761079070"
+                },
+                {
+                    "_id": "48331b71-2d7b-4b2a-92a4-22b378e7f28f",
+                    "company_code": "4530",
+                    "bankName": "HBL Bank",
+                    "balance": "50000.00",
+                    "date": "2025-10-22T00:00:00.000Z",
+                    "accountNumber": "12345678901",
+                    "created_at": "1761078978",
+                    "modified_at": "1761078978"
+                }
+            ]
+        }
+    }
+}
+
+
+
+Create Cash Account with Balance
+
+POST` http://localhost:8000/api/cash/enhanced`
+
+{
+  "request": {
+    "method": "createCashAccountWithBalance",
+    "data": {
+      "company_code": "4530",
+      "cashName": "Main Cash",
+      "balance": 10000,
+      "description": "Primary cash account"
+    }
+  }
+}
+
+
+
+{
+    "response": {
+        "status": {
+            "statusCode": 200,
+            "statusMessage": "OK",
+            "statusDescription": ""
+        },
+        "data": {
+            "message": "Cash account created successfully",
+            "cashAccount": {
+                "_id": "ddbef635-8e78-4e18-8a87-43fb90abf3e0",
+                "company_code": "4530",
+                "cashName": "Main Cash",
+                "balance": "10000.00",
+                "description": "Primary cash account"
+            }
+        }
+    }
+}
+
+
+
+
+
+## ✅ **CASH CONTROLLER - FULL VERIFICATION WITH PAYLOADS & RESPONSES**
+
+### **1. getCashByCompany** ✅
+**Request:**
+```json
+{
+  "request": {
+    "method": "getCashByCompany",
+    "data": {
+      "company_code": "4530"
+    }
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "response": {
+    "status": {
+      "statusCode": 200,
+      "statusMessage": "OK"
+    },
+    "data": {
+      "cash": {
+        "_id": "90c78a60-12dc-4858-8bbe-768d3f74b45b",
+        "company_code": "4530",
+        "cashName": "cashInHand",
+        "balance": "10000.00",
+        "date": "2025-01-01",
+        "description": "",
+        "created_at": "1761081675",
+        "modified_at": "1761082683"
+      }
+    }
+  }
+}
+```
+
+### **2. getCashById** ✅
+**Request:**
+```json
+{
+  "request": {
+    "method": "getCashById",
+    "data": {
+      "id": "90c78a60-12dc-4858-8bbe-768d3f74b45b"
+    }
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "response": {
+    "status": {
+      "statusCode": 200,
+      "statusMessage": "OK"
+    },
+    "data": {
+      "cash": {
+        "_id": "90c78a60-12dc-4858-8bbe-768d3f74b45b",
+        "company_code": "4530",
+        "cashName": "cashInHand",
+        "balance": "10000.00",
+        "date": "2025-01-01",
+        "description": "",
+        "created_at": "1761081675",
+        "modified_at": "1761082683"
+      }
+    }
+  }
+}
+```
+
+### **3. saveCashInHand** ✅
+**Request:**
+```json
+{
+  "request": {
+    "method": "saveCashInHand",
+    "data": {
+      "company_code": "4530",
+      "balance": "10000"
+    }
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "response": {
+    "status": {
+      "statusCode": 200,
+      "statusMessage": "OK"
+    },
+    "data": {
+      "message": "Cash in hand updated successfully",
+      "cash": "90c78a60-12dc-4858-8bbe-768d3f74b45b",
+      "newBalance": 10000
+    }
+  }
+}
+```
+
+### **4. getCashInHandBankByCompany** ✅
+**Request:**
+```json
+{
+  "request": {
+    "method": "getCashInHandBankByCompany",
+    "data": {
+      "company_code": "4530"
+    }
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "response": {
+    "status": {
+      "statusCode": 200,
+      "statusMessage": "OK"
+    },
+    "data": {
+      "banks": [],
+      "cashInHand": {
+        "_id": "90c78a60-12dc-4858-8bbe-768d3f74b45b",
+        "company_code": "4530",
+        "cashName": "cashInHand",
+        "balance": "0.00",
+        "date": "2025-10-21",
+        "description": "",
+        "created_at": "1761083107",
+        "modified_at": "1761083107"
+      },
+      "summary": {
+        "totalBankBalance": 0,
+        "cashBalance": 0,
+        "totalBalance": 0
+      }
+    }
+  }
+}
+```
+
+### **5. updateCashBalance** ✅
+**Request:**
+```json
+{
+  "request": {
+    "method": "updateCashBalance",
+    "data": {
+      "id": "90c78a60-12dc-4858-8bbe-768d3f74b45b",
+      "amount": "5000",
+      "operation": "add"
+    }
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "response": {
+    "status": {
+      "statusCode": 200,
+      "statusMessage": "OK"
+    },
+    "data": {
+      "cash": "90c78a60-12dc-4858-8bbe-768d3f74b45b"
+    }
+  }
+}
+```
+
+### **6. getCashHistory** 
+**Request:**
+```json
+{
+  "request": {
+    "method": "getCashHistory",
+    "data": {
+      "id": "90c78a60-12dc-4858-8bbe-768d3f74b45b"
+    }
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "response": {
+    "status": {
+      "statusCode": 200,
+      "statusMessage": "OK"
+    },
+    "data": {
+      "cashAccount": {
+        "_id": "90c78a60-12dc-4858-8bbe-768d3f74b45b",
+        "company_code": "4530",
+        "cashName": "cashInHand",
+        "balance": "15000.00",
+        "date": "2025-01-01",
+        "description": "Updated main cash account",
+        "created_at": "1761081675",
+        "modified_at": "1761084223"
+      },
+      "transactions": {
+        "sales": [],
+        "purchases": []
+      }
+    }
+  }
+}
+```
+
+### **7. updateCash** ✅
+**Request:**
+```json
+{
+  "request": {
+    "method": "updateCash",
+    "data": {
+      "id": "90c78a60-12dc-4858-8bbe-768d3f74b45b",
+      "description": "Updated main cash account",
+      "balance": "15000.00"
+    }
+  }
+}
+```
+
+**Response:**
+
+{
+  "response": {
+    "status": {
+      "statusCode": 200,
+      "statusMessage": "OK"
+    },
+    "data": {
+      "cash": "90c78a60-12dc-4858-8bbe-768d3f74b45b"
+    }
+  }
+}
+
+
+
+
+
+
+CREATE Ledger
+
+
+POST http://localhost:8000/api/ledger
+
+{
+  "request": {
+    "method": "saveLedger",
+    "data": {
+      "ledger": {
+        "name": "John Customer",
+        "company_code": "4530",
+        "ledgerType": "customer",
+        "address": "123 Main Street",
+        "region": "North",
+        "phone": "0300-1234567",
+        "email": "john@example.com",
+        "openingBalance": "5000"
+      }
+    }
+  }
+}
+
+
+{
+    "response": {
+        "status": {
+            "statusCode": 200,
+            "statusMessage": "Ledger created successfully"
+        },
+        "data": {
+            "ledger": "310dafbc-0e61-4eff-9831-780de1a88cbf"
+        }
+    }
+}
+
+
+
+
+{
+  "request": {
+    "method": "getLedgersByCompany",
+    "data": {
+      "company_code": "4530"
+    }
+  }
+}
+
+
+
+{
+    "response": {
+        "status": {
+            "statusCode": 200,
+            "statusMessage": "OK"
+        },
+        "data": {
+            "current_page_token": "",
+            "next_page_token": "",
+            "salesTotal": 0,
+            "purchasesTotal": 0,
+            "ledgers": [
+                {
+                    "_id": "310dafbc-0e61-4eff-9831-780de1a88cbf",
+                    "name": "John Customer",
+                    "company_code": "4530",
+                    "ledgerType": "customer",
+                    "address": "123 Main Street",
+                    "region": "North",
+                    "phone": "0300-1234567",
+                    "email": "john@example.com",
+                    "openingBalance": "5000.00",
+                    "currentBalance": "5000.00",
+                    "saleTotal": "0.00",
+                    "depositedSalesTotal": "0.00",
+                    "purchasesTotal": "0.00",
+                    "depositedPurchasesTotal": "0.00",
+                    "created_at": "1761085030",
+                    "modified_at": "1761085030"
+                }
+            ]
+        }
+    }
+}
+
+
+
+Customer Ledger:
+
+
+{
+  "request": {
+    "method": "saveLedger",
+    "data": {
+      "ledger": {
+        "name": "Test Supplier",
+        "company_code": "4530", 
+        "ledgerType": "supplier",
+        "openingBalance": "2000.00"
+      }
+    }
+  }
+}
+
+
+{
+    "response": {
+        "status": {
+            "statusCode": 200,
+            "statusMessage": "Ledger created successfully"
+        },
+        "data": {
+            "ledger": "a2b9d190-40c0-42b9-9e42-8ee76b6b369f"
+        }
+    }
+}
+
+
+
+
+Supplier Ledger:
+
+{
+  "request": {
+    "method": "saveLedger",
+    "data": {
+      "ledger": {
+        "name": "Test Supplier",
+        "company_code": "4530", 
+        "ledgerType": "supplier",
+        "openingBalance": "2000.00"
+      }
+    }
+  }
+}
+
+
+{
+    "response": {
+        "status": {
+            "statusCode": 200,
+            "statusMessage": "Ledger created successfully"
+        },
+        "data": {
+            "ledger": "6c4954b1-ac44-4650-88b2-d85794024b6d"
+        }
+    }
+}
+
+
+
+Cash Ledger:
+
+{
+  "request": {
+    "method": "saveLedger",
+    "data": {
+      "ledger": {
+        "name": "Main Cash Account",
+        "company_code": "4530",
+        "ledgerType": "cash",
+        "openingBalance": "50000.00"
+      }
+    }
+  }
+}
+
+
+{
+    "response": {
+        "status": {
+            "statusCode": 200,
+            "statusMessage": "Ledger created successfully"
+        },
+        "data": {
+            "ledger": "b6d9a121-66ce-4262-84df-f651c1776212"
+        }
+    }
+}
+
+
+updateLedger - Update ledger details
+
+{
+  "request": {
+    "method": "updateLedger",
+    "data": {
+      "_id": "310dafbc-0e61-4eff-9831-780de1a88cbf",
+      "name": "Updated Customer Name",
+      "phone": "0300-9876543"
+    }
+  }
+}
+
+
+{
+    "response": {
+        "status": {
+            "statusCode": 200,
+            "statusMessage": "Ledger updated successfully"
+        },
+        "data": {
+            "ledger": "310dafbc-0e61-4eff-9831-780de1a88cbf"
+        }
+    }
+}
+
+
+updateLedgerGeneral - General updates
+
+{
+  "request": {
+    "method": "updateLedgerGeneral", 
+    "data": {
+      "_id": "310dafbc-0e61-4eff-9831-780de1a88cbf",
+      "address": "456 Updated Street",
+      "email": "updated@example.com"
+    }
+  }
+}
+
+{
+    "response": {
+        "status": {
+            "statusCode": 200,
+            "statusMessage": "Ledger updated successfully"
+        },
+        "data": {
+            "ledger": "310dafbc-0e61-4eff-9831-780de1a88cbf"
+        }
+    }
+}
+
+
+updateSaleLedger - Update sales transactions
+{
+  "request": {
+    "method": "updateSaleLedger",
+    "data": {
+      "ledgerId": "310dafbc-0e61-4eff-9831-780de1a88cbf",
+      "amount": "1500.00",
+      "type": "sale" // or "return"
+    }
+  }
+}
+
+
+{
+    "response": {
+        "status": {
+            "statusCode": 200,
+            "statusMessage": "Sale ledger updated successfully"
+        },
+        "data": {
+            "ledger": "310dafbc-0e61-4eff-9831-780de1a88cbf"
+        }
+    }
+}
+
+
+updatePurchaseLedger - Update purchase transactions 
+
+
+{
+  "request": {
+    "method": "updatePurchaseLedger",
+    "data": {
+      "ledgerId": "310dafbc-0e61-4eff-9831-780de1a88cbf", 
+      "amount": "800.00",
+      "type": "purchase" // or "return"
+    }
+  }
+}
+
+
+{
+    "response": {
+        "status": {
+            "statusCode": 200,
+            "statusMessage": "Purchase ledger updated successfully"
+        },
+        "data": {
+            "ledger": "310dafbc-0e61-4eff-9831-780de1a88cbf"
+        }
+    }
+}
+
+
+
+getLedgerHistory - Get transaction history
+
+{
+  "request": {
+    "method": "getLedgerHistory",
+    "data": {
+      "_id": "310dafbc-0e61-4eff-9831-780de1a88cbf"
+    }
+  }
+}
+
+
+{
+    "response": {
+        "status": {
+            "statusCode": 200,
+            "statusMessage": "OK"
+        },
+        "data": {
+            "ledger": {
+                "_id": "310dafbc-0e61-4eff-9831-780de1a88cbf",
+                "name": "Updated Customer Name",
+                "company_code": "4530",
+                "ledgerType": "customer",
+                "address": "456 Updated Street",
+                "region": "North",
+                "phone": "0300-9876543",
+                "email": "updated@example.com",
+                "openingBalance": "5000.00",
+                "currentBalance": "4900.00",
+                "saleTotal": "1500.00",
+                "depositedSalesTotal": "0.00",
+                "purchasesTotal": "1600.00",
+                "depositedPurchasesTotal": "0.00",
+                "created_at": "1761085030",
+                "modified_at": "1761086789"
+            },
+            "transactions": {
+                "sales": [],
+                "purchases": []
+            }
+        }
+    }
+} 
+
+
+
+
+node migrate-database.js
+
+
+{
+    "request": {
+        "method": "getLedgerHistory",
+        "data": {
+            "_id": "92abf1fd-b16a-4661-8791-5814fc29b11e"
+        }
+    }
+} 
+
+
+{
+    "response": {
+        "status": {
+            "statusCode": 200,
+            "statusMessage": "OK"
+        },
+        "data": {
+            "ledger": {
+                "_id": "92abf1fd-b16a-4661-8791-5814fc29b11e",
+                "name": "Umer javed",
+                "company_code": "2370",
+                "ledgerType": "supplier",
+                "address": "Sohan islamabad",
+                "region": "Local",
+                "phone": "03165472311",
+                "email": "umerjutt7894@gmail.com",
+                "openingBalance": "0.00",
+                "currentBalance": "199.00",
+                "saleTotal": "299.00",
+                "depositedSalesTotal": "0.00",
+                "purchasesTotal": "100.00",
+                "depositedPurchasesTotal": "0.00",
+                "created_at": "1761163106",
+                "modified_at": "1761229357"
+            },
+            "transactions": {
+                "sales": [],
+                "purchases": [
+                    {
+                        "id": 1,
+                        "bill_id": null,
+                        "company_code": "2370",
+                        "ledger_id": "92abf1fd-b16a-4661-8791-5814fc29b11e",
+                        "bank_id": null,
+                        "cash_id": null,
+                        "item_id": "item_001",
+                        "name": "Mobile Phones Purchase",
+                        "description": "",
+                        "item_code": "",
+                        "category": "",
+                        "unit": "pcs",
+                        "quantity": 1,
+                        "purchase_price": "500.00",
+                        "sale_price": "0.00",
+                        "total_price": "500.00",
+                        "total_profit_margin": "0.00",
+                        "discount": "0.00",
+                        "vendor": "",
+                        "selected_imei": "",
+                        "batch_number": "",
+                        "purchase_type": "pieces",
+                        "date": "2024-01-15",
+                        "timestamp": "1761245531",
+                        "read_status": false,
+                        "min_quantity": 0,
+                        "img_url": "",
+                        "paid": "0.00",
+                        "created_at": "1761245531",
+                        "modified_at": "1761245531"
+                    },
+                    {
+                        "id": 2,
+                        "bill_id": null,
+                        "company_code": "2370",
+                        "ledger_id": "92abf1fd-b16a-4661-8791-5814fc29b11e",
+                        "bank_id": null,
+                        "cash_id": null,
+                        "item_id": "item_002",
+                        "name": "Accessories Purchase",
+                        "description": "",
+                        "item_code": "",
+                        "category": "",
+                        "unit": "pcs",
+                        "quantity": 1,
+                        "purchase_price": "300.00",
+                        "sale_price": "0.00",
+                        "total_price": "300.00",
+                        "total_profit_margin": "0.00",
+                        "discount": "0.00",
+                        "vendor": "",
+                        "selected_imei": "",
+                        "batch_number": "",
+                        "purchase_type": "pieces",
+                        "date": "2024-01-10",
+                        "timestamp": "1761245531",
+                        "read_status": false,
+                        "min_quantity": 0,
+                        "img_url": "",
+                        "paid": "150.00",
+                        "created_at": "1761245531",
+                        "modified_at": "1761245531"
+                    },
+                    {
+                        "id": 3,
+                        "bill_id": null,
+                        "company_code": "2370",
+                        "ledger_id": "92abf1fd-b16a-4661-8791-5814fc29b11e",
+                        "bank_id": null,
+                        "cash_id": null,
+                        "item_id": "item_003",
+                        "name": "Chargers Purchase",
+                        "description": "",
+                        "item_code": "",
+                        "category": "",
+                        "unit": "pcs",
+                        "quantity": 1,
+                        "purchase_price": "250.00",
+                        "sale_price": "0.00",
+                        "total_price": "250.00",
+                        "total_profit_margin": "0.00",
+                        "discount": "0.00",
+                        "vendor": "",
+                        "selected_imei": "",
+                        "batch_number": "",
+                        "purchase_type": "pieces",
+                        "date": "2024-01-05",
+                        "timestamp": "1761245531",
+                        "read_status": false,
+                        "min_quantity": 0,
+                        "img_url": "",
+                        "paid": "0.00",
+                        "created_at": "1761245531",
+                        "modified_at": "1761245531"
+                    }
+                ]
+            }
+        }
+    }
+}
+
+
+
+ADD Sale to Ledger
+
+
+
+
+

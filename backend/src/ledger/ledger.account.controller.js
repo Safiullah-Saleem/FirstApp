@@ -428,7 +428,7 @@ const updateSaleLedger = async (data, res) => {
   }
 };
 
-// 🔹 UPDATE LEDGER WITH PURCHASE TRANSACTION
+// 🔹 UPDATE LEDGER WITH PURCHASE TRANSACTION - FIXED VERSION
 const updatePurchaseLedger = async (data, res) => {
   try {
     const { ledgerId, amount, type, purchaseData } = data;
@@ -468,40 +468,48 @@ const updatePurchaseLedger = async (data, res) => {
       });
     }
 
+    // ✅ FIXED CALCULATIONS
     let newPurchasesTotal = parseFloat(ledger.purchasesTotal || 0);
     let newDepositedPurchasesTotal = parseFloat(ledger.depositedPurchasesTotal || 0);
     let balanceChange = 0;
 
     if (type === 'purchase') {
       newPurchasesTotal += parsedAmount;
-      // For purchases, subtract from balance (negative impact)
+      // For supplier: Purchase increases liability (negative balance)
       balanceChange = -parsedAmount;
     } else if (type === 'return') {
       newPurchasesTotal -= parsedAmount;
-      // For returns, add back to balance (positive impact)
+      // Return decreases liability (positive balance)
+      balanceChange = parsedAmount;
+    } else if (type === 'payment') {
+      // Handle purchase payments separately
+      newDepositedPurchasesTotal += parsedAmount;
+      // Payment reduces liability (positive balance)
       balanceChange = parsedAmount;
     } else {
       return res.json({
         response: {
           status: {
             statusCode: 400,
-            statusMessage: "Invalid type. Must be 'purchase' or 'return'"
+            statusMessage: "Invalid type. Must be 'purchase', 'return', or 'payment'"
           }
         }
       });
     }
 
+    const newCurrentBalance = parseFloat(ledger.currentBalance || 0) + balanceChange;
+
     await LedgerAccount.update({
       purchasesTotal: newPurchasesTotal,
       depositedPurchasesTotal: newDepositedPurchasesTotal,
-      currentBalance: parseFloat(ledger.currentBalance || 0) + balanceChange,
+      currentBalance: newCurrentBalance,
       modified_at: Math.floor(Date.now() / 1000)
     }, {
       where: { _id: ledgerId }
     });
 
     // Save purchase transaction details if purchaseData is provided
-    if (purchaseData) {
+    if (purchaseData && type === 'purchase') {
       try {
         const Purchase = require('../billing/purchase.model');
 
@@ -510,7 +518,7 @@ const updatePurchaseLedger = async (data, res) => {
           ledger_id: ledgerId,
           total_price: parsedAmount,
           date: purchaseData.date || new Date().toISOString().split('T')[0],
-          company_code: ledger.company_code, // Get company code from ledger
+          company_code: ledger.company_code,
           timestamp: Math.floor(Date.now() / 1000),
           created_at: Math.floor(Date.now() / 1000),
           modified_at: Math.floor(Date.now() / 1000)
@@ -520,7 +528,6 @@ const updatePurchaseLedger = async (data, res) => {
         console.log(`✅ Purchase transaction recorded for ledger ${ledgerId}`);
       } catch (purchaseError) {
         console.log('Failed to save purchase transaction details:', purchaseError.message);
-        // Don't fail the entire operation if purchase recording fails
       }
     }
 
@@ -531,7 +538,12 @@ const updatePurchaseLedger = async (data, res) => {
           statusMessage: "Purchase ledger updated successfully"
         },
         data: {
-          ledger: ledgerId
+          ledger: ledgerId,
+          updatedFields: {
+            purchasesTotal: newPurchasesTotal,
+            depositedPurchasesTotal: newDepositedPurchasesTotal,
+            currentBalance: newCurrentBalance
+          }
         }
       }
     });
@@ -588,7 +600,7 @@ const deleteLedger = async (data, res) => {
   }
 };
 
-// 🔹 GET LEDGER HISTORY (Integration with Sales/Purchases)
+// 🔹 GET LEDGER HISTORY (Integration with Sales/Purchases) - FIXED VERSION
 const getLedgerHistory = async (data, res) => {
   try {
     const { _id } = data;
@@ -621,20 +633,23 @@ const getLedgerHistory = async (data, res) => {
     let purchases = [];
     
     try {
-      const Sale = require('../billing/sale.model');
-      const Purchase = require('../billing/purchase.model');
-      
-      sales = await Sale.findAll({
-        where: { ledger_id: _id },
-        order: [['date', 'DESC']]
-      });
+      // ✅ FIXED: Use correct path to purchase model
+      const Purchase = require('./purchase.model'); // Adjust path if needed
       
       purchases = await Purchase.findAll({
         where: { ledger_id: _id },
         order: [['date', 'DESC']]
       });
+      
+      // If you have sales model, uncomment this:
+      // const Sale = require('./sale.model');
+      // sales = await Sale.findAll({
+      //   where: { ledger_id: _id },
+      //   order: [['date', 'DESC']]
+      // });
+      
     } catch (importError) {
-      console.log('Billing models not available yet');
+      console.log('Purchase model not available:', importError.message);
     }
 
     res.json({

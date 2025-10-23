@@ -16,20 +16,22 @@ const { sequelize, testConnection, getConnectionHealth } = require('./src/config
 // Enhanced migration function with Railway-specific error handling
 async function migrateWithModel() {
   const startTime = Date.now();
+  const initialMemory = process.memoryUsage();
   
   try {
     console.log("🚀 Starting Railway Database Migration...");
     console.log(`📅 Started at: ${new Date().toISOString()}`);
     console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(`🔗 Database URL: ${process.env.DATABASE_URL ? '✅ Set' : '❌ Not set'}`);
+    console.log(`🏠 Database Host: ${process.env.DB_HOST || 'Not set'}`);
     console.log('');
-    
+
     // Step 1: Test database connection with comprehensive checks
     console.log("🔍 Step 1: Testing database connection...");
     await testConnection();
     console.log("✅ Database connection verified");
     console.log('');
-    
+
     // Step 2: Check connection health
     console.log("💚 Step 2: Checking connection health...");
     const health = await getConnectionHealth();
@@ -39,7 +41,7 @@ async function migrateWithModel() {
     console.log("✅ Database health check passed");
     console.log(`📊 Pool status: ${health.pool.size}/${health.pool.max} connections`);
     console.log('');
-    
+
     // Step 3: Sync Purchase model with enhanced error handling
     console.log("🔄 Step 3: Syncing Purchase model...");
     try {
@@ -76,7 +78,7 @@ async function migrateWithModel() {
           ledger_id: '92abf1fd-b16a-4661-8791-5814fc29b11e' 
         }
       });
-      console.log(`📈 Found ${existingPurchases} existing purchases`);
+      console.log(`📈 Found ${existingPurchases} existing purchases for ledger`);
     } catch (countError) {
       console.error("❌ Error counting existing purchases:", countError.message);
       throw new Error(`Failed to count existing data: ${countError.message}`);
@@ -96,7 +98,10 @@ async function migrateWithModel() {
           date: '2024-01-15',
           item_id: 'item_001',
           purchase_price: 500.00,
-          quantity: 1
+          quantity: 1,
+          timestamp: Math.floor(Date.now() / 1000),
+          created_at: Math.floor(Date.now() / 1000),
+          modified_at: Math.floor(Date.now() / 1000)
         },
         {
           company_code: '2370',
@@ -107,7 +112,10 @@ async function migrateWithModel() {
           date: '2024-01-10',
           item_id: 'item_002',
           purchase_price: 300.00,
-          quantity: 1
+          quantity: 1,
+          timestamp: Math.floor(Date.now() / 1000),
+          created_at: Math.floor(Date.now() / 1000),
+          modified_at: Math.floor(Date.now() / 1000)
         },
         {
           company_code: '2370',
@@ -118,17 +126,33 @@ async function migrateWithModel() {
           date: '2024-01-05',
           item_id: 'item_003',
           purchase_price: 250.00,
-          quantity: 1
+          quantity: 1,
+          timestamp: Math.floor(Date.now() / 1000),
+          created_at: Math.floor(Date.now() / 1000),
+          modified_at: Math.floor(Date.now() / 1000)
         }
       ];
       
       try {
-        await Purchase.bulkCreate(sampleData, {
-          validate: true, // Validate data before insertion
-          individualHooks: false, // Disable hooks for bulk operations
-          returning: false // Don't return inserted data for performance
-        });
-        console.log("✅ Sample purchase data inserted successfully");
+        // Insert with progress tracking
+        let insertedCount = 0;
+        const totalCount = sampleData.length;
+        
+        console.log(`   Inserting ${totalCount} sample records...`);
+        
+        for (const data of sampleData) {
+          try {
+            await Purchase.create(data);
+            insertedCount++;
+            console.log(`   ✅ [${insertedCount}/${totalCount}] ${data.name}`);
+          } catch (itemError) {
+            console.error(`   ❌ Failed to insert: ${data.name}`, itemError.message);
+            // Continue with other records even if one fails
+          }
+        }
+        
+        console.log(`✅ ${insertedCount}/${totalCount} sample records inserted successfully`);
+        
       } catch (insertError) {
         console.error("❌ Error inserting sample data:", insertError.message);
         
@@ -145,6 +169,7 @@ async function migrateWithModel() {
       }
     } else {
       console.log(`✅ Sample data already exists: ${existingPurchases} purchases found`);
+      console.log("ℹ️  Skipping sample data insertion");
     }
     console.log('');
 
@@ -157,14 +182,26 @@ async function migrateWithModel() {
       // Test a simple query to ensure everything works
       const testQuery = await Purchase.findOne({
         where: { company_code: '2370' },
-        attributes: ['id', 'name', 'total_price']
+        attributes: ['id', 'name', 'total_price', 'created_at'],
+        order: [['created_at', 'DESC']]
       });
       
       if (testQuery) {
-        console.log(`✅ Test query successful: Found purchase "${testQuery.name}"`);
+        console.log(`✅ Test query successful: Found purchase "${testQuery.name}" ($${testQuery.total_price})`);
       } else {
         console.log("⚠️  No test data found, but migration completed");
       }
+
+      // Verify sample data structure
+      const sampleCheck = await Purchase.findOne({
+        where: { ledger_id: '92abf1fd-b16a-4661-8791-5814fc29b11e' },
+        attributes: ['id', 'name', 'total_price', 'paid', 'date']
+      });
+      
+      if (sampleCheck) {
+        console.log(`✅ Sample data verified: "${sampleCheck.name}" from ${sampleCheck.date}`);
+      }
+      
     } catch (verifyError) {
       console.error("❌ Final verification failed:", verifyError.message);
       throw new Error(`Migration verification failed: ${verifyError.message}`);
@@ -172,10 +209,13 @@ async function migrateWithModel() {
 
     const endTime = Date.now();
     const duration = ((endTime - startTime) / 1000).toFixed(2);
+    const finalMemory = process.memoryUsage();
+    const memoryUsed = ((finalMemory.heapUsed - initialMemory.heapUsed) / 1024 / 1024).toFixed(2);
     
     console.log('');
     console.log("🎉 Migration completed successfully!");
     console.log(`⏱️  Total time: ${duration} seconds`);
+    console.log(`🧠 Memory used: ${memoryUsed} MB`);
     console.log(`📅 Completed at: ${new Date().toISOString()}`);
     
   } catch (error) {
@@ -196,6 +236,7 @@ async function migrateWithModel() {
       console.error("  - Check Railway DATABASE_URL format");
       console.error("  - Verify SSL configuration in database.js");
       console.error("  - Ensure Railway PostgreSQL is running");
+      console.error("  - Try adding ?ssl=require to DATABASE_URL");
     }
     
     if (error.message.includes('timeout')) {
@@ -204,6 +245,7 @@ async function migrateWithModel() {
       console.error("  - Check Railway database status");
       console.error("  - Verify connection pool settings");
       console.error("  - Check Railway service limits");
+      console.error("  - Database might be sleeping (Railway free tier)");
     }
     
     if (error.message.includes('ENOTFOUND') || error.message.includes('ECONNREFUSED')) {
@@ -212,9 +254,26 @@ async function migrateWithModel() {
       console.error("  - Verify Railway DATABASE_URL hostname");
       console.error("  - Check Railway database service status");
       console.error("  - Ensure database is not sleeping");
+      console.error("  - Check network connectivity to Railway");
+    }
+
+    if (error.message.includes('auth') || error.message.includes('password')) {
+      console.error('');
+      console.error("🔑 Authentication Error Diagnostics:");
+      console.error("  - Verify DATABASE_URL credentials");
+      console.error("  - Check Railway environment variables");
+      console.error("  - Ensure database user has proper permissions");
     }
     
     throw error;
+  } finally {
+    // Always close the database connection
+    try {
+      await sequelize.close();
+      console.log("🔒 Database connection closed gracefully");
+    } catch (closeError) {
+      console.log("⚠️  Error closing connection:", closeError.message);
+    }
   }
 }
 
@@ -233,6 +292,7 @@ if (require.main === module) {
       console.log("  2. Test your API endpoints");
       console.log("  3. Check Railway logs for any issues");
       console.log("  4. Monitor database performance in Railway dashboard");
+      console.log("  5. Run your application with: npm start");
       process.exit(0);
     })
     .catch((error) => {
@@ -245,11 +305,13 @@ if (require.main === module) {
       console.error("  3. Check Railway logs for detailed error information");
       console.error("  4. Ensure database is not sleeping (Railway free tier)");
       console.error("  5. Verify SSL configuration");
+      console.error("  6. Check database user permissions");
       console.error('');
       console.error("📞 For Railway-specific issues:");
       console.error("  - Check Railway dashboard for service status");
       console.error("  - Review Railway logs in the dashboard");
       console.error("  - Verify environment variables are set correctly");
+      console.error("  - Restart Railway services if needed");
       console.error('');
       process.exit(1);
     });
