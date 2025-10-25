@@ -134,6 +134,9 @@ const saveBills = async (req, res) => {
         {
           bill_id: billId,
           company_code,
+          ledger_id: otherBillData.ledger_id || null,
+          bank_id: otherBillData.bank_id || otherBillData.bankId || null,
+          cash_id: otherBillData.cash_id || otherBillData.cashId || null,
           item_id: String(getItemId(item)),
           name: item.name || item.productName || "",
           description: item.description || "",
@@ -149,6 +152,8 @@ const saveBills = async (req, res) => {
           selected_imei: item.selectedImei || "",
           batch_number: item.saleBatchNumber || item.batchNo || item.batchNumber || "",
           sale_type: item.saleType || "pieces",
+          paid: parseFloat(otherBillData.paid) || 0,
+          date: otherBillData.date || new Date().toISOString().split("T")[0],
         },
         { transaction }
       );
@@ -928,6 +933,279 @@ const restoreInventory = async (sale, company_code, transaction) => {
   }
 };
 
+// ===== NEW ENDPOINTS =====
+
+// Get sale history by company code with filters
+const getSaleHistory = async (req, res) => {
+  try {
+    const { company_code, startDate, endDate, page = 1, limit = 50 } = req.query;
+
+    if (!company_code) {
+      return res.status(400).json({
+        response: {
+          status: {
+            statusCode: 400,
+            statusMessage: "Company code is required",
+          },
+          data: null,
+        },
+      });
+    }
+
+    const options = {
+      page: parseInt(page),
+      limit: parseInt(limit),
+      includeBill: true
+    };
+
+    let sales;
+    if (startDate && endDate) {
+      sales = await Sale.findByDateRange(company_code, startDate, endDate, { includeBill: true });
+    } else {
+      sales = await Sale.findByCompany(company_code, options);
+    }
+
+    res.json({
+      response: {
+        status: {
+          statusCode: 200,
+          statusMessage: "Sale history retrieved successfully",
+        },
+        data: sales,
+      },
+    });
+  } catch (error) {
+    console.error("GET SALE HISTORY ERROR:", error);
+    
+    res.status(500).json({
+      response: {
+        status: {
+          statusCode: 500,
+          statusMessage: "Internal server error",
+        },
+        data: null,
+      },
+    });
+  }
+};
+
+// Get bills by company code with pagination
+const getBillsByCompany = async (req, res) => {
+  try {
+    const { company_code, startDate, endDate, page = 1, limit = 50 } = req.query;
+
+    if (!company_code) {
+      return res.status(400).json({
+        response: {
+          status: {
+            statusCode: 400,
+            statusMessage: "Company code is required",
+          },
+          data: null,
+        },
+      });
+    }
+
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const whereClause = { company_code };
+
+    if (startDate && endDate) {
+      whereClause.date = {
+        [Op.between]: [startDate, endDate]
+      };
+    }
+
+    const { count, rows: bills } = await Bill.findAndCountAll({
+      where: whereClause,
+      order: [['created_at', 'DESC']],
+      limit: parseInt(limit),
+      offset: offset,
+      include: [{
+        association: 'sales',
+        attributes: ['id', 'name', 'quantity', 'sale_price', 'total_price']
+      }]
+    });
+
+    res.json({
+      response: {
+        status: {
+          statusCode: 200,
+          statusMessage: "Bills retrieved successfully",
+        },
+        data: {
+          bills,
+          pagination: {
+            total: count,
+            page: parseInt(page),
+            limit: parseInt(limit),
+            totalPages: Math.ceil(count / parseInt(limit))
+          }
+        },
+      },
+    });
+  } catch (error) {
+    console.error("GET BILLS BY COMPANY ERROR:", error);
+    
+    res.status(500).json({
+      response: {
+        status: {
+          statusCode: 500,
+          statusMessage: "Internal server error",
+        },
+        data: null,
+      },
+    });
+  }
+};
+
+// Return sale (with reversal of balances and inventory restoration)
+const returnSale = async (req, res) => {
+  const transaction = await sequelize.transaction();
+
+  try {
+    const { sale_id, company_code, return_quantity } = req.body;
+
+    if (!sale_id || !company_code) {
+      await transaction.rollback();
+      return res.status(400).json({
+        response: {
+          status: {
+            statusCode: 400,
+            statusMessage: "Sale ID and company code are required",
+          },
+          data: null,
+        },
+      });
+    }
+
+    const sale = await Sale.findOne({
+      where: { 
+        id: parseInt(sale_id),
+        company_code 
+      },
+      transaction
+    });
+
+    if (!sale) {
+      await transaction.rollback();
+      return res.status(404).json({
+        response: {
+          status: {
+            statusCode: 404,
+            statusMessage: "Sale not found",
+          },
+          data: null,
+        },
+      });
+    }
+
+    const qtyToReturn = return_quantity || sale.quantity;
+    
+    // Calculate return amounts
+    const unitPrice = parseFloat(sale.sale_price);
+    const unitCost = parseFloat(sale.cost_price);
+    const returnAmount = unitPrice * qtyToReturn;
+    const returnCost = unitCost * qtyToReturn;
+
+    // Restore inventory
+    const dbItem = await Item.findOne({
+      where: {
+        id: parseInt(sale.item_id),
+        company_code,
+      },
+      transaction,
+    });
+
+    if (dbItem) {
+      const newQuantity = dbItem.quantity + qtyToReturn;
+      await dbItem.update(
+        {
+          quantity: newQuantity,
+          modified_at: Math.floor(Date.now() / 1000),
+        },
+        { transaction }
+      );
+      console.log(`✅ Restored ${qtyToReturn} units to item ${sale.item_id}`);
+    }
+
+    // Reverse ledger, bank, and cash balances
+    try {
+      // Reverse ledger balance
+      if (sale.ledger_id) {
+        const LedgerAccount = require('../ledger/ledger.account.model');
+        const ledger = await LedgerAccount.findOne({ where: { _id: sale.ledger_id } });
+        if (ledger) {
+          await LedgerAccount.update({
+            saleTotal: parseFloat(ledger.saleTotal || 0) - returnAmount,
+            depositedSalesTotal: parseFloat(ledger.depositedSalesTotal || 0) - returnAmount,
+            currentBalance: parseFloat(ledger.currentBalance || 0) - returnAmount,
+            modified_at: Math.floor(Date.now() / 1000)
+          }, { where: { _id: sale.ledger_id }, transaction });
+          console.log(`✅ Reversed ledger ${sale.ledger_id} balance`);
+        }
+      }
+      
+      // Reverse bank balance
+      if (sale.bank_id) {
+        const BankAccount = require('../bank/bank.account.model');
+        const bank = await BankAccount.findOne({ where: { _id: sale.bank_id } });
+        if (bank) {
+          await BankAccount.update({
+            balance: parseFloat(bank.balance || 0) - returnAmount,
+            modified_at: Math.floor(Date.now() / 1000)
+          }, { where: { _id: sale.bank_id }, transaction });
+          console.log(`✅ Reversed bank ${sale.bank_id} balance`);
+        }
+      }
+      
+      // Reverse cash balance
+      if (sale.cash_id) {
+        const CashAccount = require('../cash/cash.account.model');
+        const cash = await CashAccount.findOne({ where: { _id: sale.cash_id } });
+        if (cash) {
+          await CashAccount.update({
+            balance: parseFloat(cash.balance || 0) - returnAmount,
+            modified_at: Math.floor(Date.now() / 1000)
+          }, { where: { _id: sale.cash_id }, transaction });
+          console.log(`✅ Reversed cash ${sale.cash_id} balance`);
+        }
+      }
+    } catch (integrationError) {
+      console.log('Integration modules not available:', integrationError.message);
+    }
+
+    await transaction.commit();
+
+    res.json({
+      response: {
+        status: {
+          statusCode: 200,
+          statusMessage: "Sale returned successfully",
+        },
+        data: {
+          sale_id: sale.id,
+          return_amount: returnAmount,
+          return_quantity: qtyToReturn,
+          message: "Sale returned successfully. Inventory restored and balances reversed.",
+        },
+      },
+    });
+  } catch (error) {
+    await transaction.rollback();
+    console.error("RETURN SALE ERROR:", error);
+    
+    res.status(500).json({
+      response: {
+        status: {
+          statusCode: 500,
+          statusMessage: "Internal server error",
+        },
+        data: null,
+      },
+    });
+  }
+};
+
 module.exports = {
   // CREATE
   saveBills,
@@ -935,6 +1213,8 @@ module.exports = {
   
   // READ
   getAllBills,
+  getSaleHistory,
+  getBillsByCompany,
   
   // UPDATE
   updateBill,
@@ -942,5 +1222,8 @@ module.exports = {
   
   // DELETE
   deleteBill,
-  deleteSale
+  deleteSale,
+  
+  // NEW
+  returnSale
 };

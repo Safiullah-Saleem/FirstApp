@@ -25,7 +25,7 @@ const sampleData = {
  * Method: createCashAccountWithBalance
  */
 const createMainCashAccount = {
-  url: 'http://localhost:3000/api/cash',
+  url: 'http://localhost:8000/api/cash',
   method: 'POST',
   headers: {
     'Content-Type': 'application/json'
@@ -48,7 +48,7 @@ const createMainCashAccount = {
  * Method: createCashAccountWithBalance
  */
 const createPettyCashAccount = {
-  url: 'http://localhost:3000/api/cash',
+  url: 'http://localhost:8000/api/cash',
   method: 'POST',
   headers: {
     'Content-Type': 'application/json'
@@ -72,7 +72,7 @@ const createPettyCashAccount = {
  * Note: You'll need to get the _id from the create response first
  */
 const updateCashBalance = (cashAccountId) => ({
-  url: 'http://localhost:3000/api/cash',
+  url: 'http://localhost:8000/api/cash',
   method: 'POST',
   headers: {
     'Content-Type': 'application/json'
@@ -94,7 +94,7 @@ const updateCashBalance = (cashAccountId) => ({
  * Method: getCashByCompany
  */
 const getCashByCompany = {
-  url: 'http://localhost:3000/api/cash',
+  url: 'http://localhost:8000/api/cash',
   method: 'POST',
   headers: {
     'Content-Type': 'application/json'
@@ -114,7 +114,7 @@ const getCashByCompany = {
  * Method: getCashInHandBankByCompany
  */
 const getCashInHandAndBanks = {
-  url: 'http://localhost:3000/api/cash',
+  url: 'http://localhost:8000/api/cash',
   method: 'POST',
   headers: {
     'Content-Type': 'application/json'
@@ -171,7 +171,7 @@ const testCashAccountAPIs = async () => {
  * for creating cash accounts with balance
  */
 const createCashUsingExistingMethod = {
-  url: 'http://localhost:3000/api/cash',
+  url: 'http://localhost:8000/api/cash',
   method: 'POST',
   headers: {
     'Content-Type': 'application/json'
@@ -194,7 +194,7 @@ const createCashUsingExistingMethod = {
  * from existing cash balance
  */
 const addToCashBalance = (cashAccountId, amount) => ({
-  url: 'http://localhost:3000/api/cash',
+  url: 'http://localhost:8000/api/cash',
   method: 'POST',
   headers: {
     'Content-Type': 'application/json'

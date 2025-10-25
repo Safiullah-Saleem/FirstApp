@@ -12,7 +12,6 @@ const ledgerRoutes = require("./ledger/ledger.account.routes");
 const bankRoutes = require("./bank/bank.account.routes");
 const cashRoutes = require("./cash/cash.account.routes");
 
-
 console.log("🟢 Loading item routes...");
 let itemRoutes;
 try {
@@ -33,7 +32,7 @@ const app = express();
 app.use(
   cors({
     origin: [
-      "https://stockwala-frontend-f5ps.vercel.app/",
+      "https://stockwala-frontend-f5ps.vercel.app",
       "http://localhost:5173"
     ],
     credentials: true,
@@ -134,15 +133,12 @@ app.get("/", (req, res) => {
       "/api/billing",
       "/api/ledger",
       "/api/transactions",
-      "/api/banks",
-      "/api/debug-items",
-      "/api/debug-billing",
-      "/health",
-    ],
+      "/api/banks"
+    ]
   });
 });
 
-// Enhanced health check for Railway with database monitoring
+// Health monitoring
 app.get("/health", async (req, res) => {
   try {
     const dbHealth = await getConnectionHealth();

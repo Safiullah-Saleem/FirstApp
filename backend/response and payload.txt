@@ -1846,9 +1846,452 @@ node migrate-database.js
 }
 
 
+POST http://localhost:8000/api/billing/saveBills 
 
-ADD Sale to Ledger
 
+{
+  "company_code": "2370",
+  "customer": "John Doe",
+  "phone": "1234567890",
+  "seller": "Sales Person",
+  "date": "2024-01-15",
+  "subTotal": 1000.00,
+  "discount": 0.00,
+  "total": 1000.00,
+  "paid": 1000.00,
+  "change": 0.00,
+  "paymentMethod": "cash",
+  "notes": "Cash sale",
+  "cash_id": "550e8400-e29b-41d4-a716-446655440000",
+  "items": [
+    {
+      "itemId": "29",
+      "name": "Samsung Galaxy S21",
+      "description": "Latest smartphone",
+      "itemCode": "SG-S21-001",
+      "category": "Mobile Phones",
+      "unit": "pcs",
+      "saleQuantity": 1,
+      "salePrice": 1000.00,
+      "costPrice": 800.00,
+      "discount": 0.00,
+      "vendor": "Samsung",
+      "selectedImei": "",
+      "saleBatchNumber": "",
+      "saleType": "pieces"
+    }
+  ]
+}
+
+
+
+{
+    "response": {
+        "status": {
+            "statusCode": 200,
+            "statusMessage": "Bill saved successfully"
+        },
+        "data": {
+            "billId": 18,
+            "billNumber": 1,
+            "message": "Bill and inventory updated successfully"
+        }
+    }
+}
+
+
+
+
+PUT http://localhost:8000/api/billing/bill/18
+
+
+{
+  "customer": "John Doe Updated",
+  "phone": "1112223333",
+  "total": 1600.00,
+  "paid": 1600.00,
+  "notes": "Updated bill information",
+  "items": [
+    {
+      "itemId": "29",
+      "saleQuantity": 3,
+      "salePrice": 500.00
+    }
+  ]
+}
+
+
+{
+    "response": {
+        "status": {
+            "statusCode": 200,
+            "statusMessage": "Bill updated successfully"
+        },
+        "data": {
+            "bill": {
+                "id": 18,
+                "company_code": "2370",
+                "bill_number": 1,
+                "customer": "John Doe Updated",
+                "phone": "1112223333",
+                "seller": "Sales Person",
+                "date": "2024-01-15",
+                "sub_total": 1000,
+                "discount": 0,
+                "total": 1600,
+                "paid": 1600,
+                "change_amount": 0,
+                "payment_method": "cash",
+                "notes": "Updated bill information",
+                "warehouse_bill": false,
+                "store_bill": false,
+                "gst": "",
+                "bank_name": "",
+                "cheque": "",
+                "bank_id": "",
+                "ledger_id": "",
+                "ledger_address": "",
+                "discount_type": "price",
+                "formally_outstandings": 0,
+                "created_at": "1761403545",
+                "modified_at": 1761404497
+            },
+            "message": "Bill updated successfully"
+        }
+    }
+} 
+
+#get all bills by company 
+
+GET http://localhost:8000/api/billing/bills/company/2370 
+
+
+{
+    "response": {
+        "status": {
+            "statusCode": 200,
+            "statusMessage": "Bills retrieved successfully"
+        },
+        "data": {
+            "bills": [
+                {
+                    "id": 18,
+                    "company_code": "2370",
+                    "bill_number": 1,
+                    "customer": "John Doe Updated",
+                    "phone": "1112223333",
+                    "seller": "Sales Person",
+                    "date": "2024-01-15",
+                    "sub_total": "1000.00",
+                    "discount": "0.00",
+                    "total": "1600.00",
+                    "paid": "1600.00",
+                    "change_amount": "0.00",
+                    "payment_method": "cash",
+                    "notes": "Updated bill information",
+                    "warehouse_bill": false,
+                    "store_bill": false,
+                    "gst": "",
+                    "bank_name": "",
+                    "cheque": "",
+                    "bank_id": "",
+                    "ledger_id": "",
+                    "ledger_address": "",
+                    "discount_type": "price",
+                    "formally_outstandings": "0.00",
+                    "created_at": "1761403545",
+                    "modified_at": "1761404497"
+                },
+                {
+                    "id": 13,
+                    "company_code": "2370",
+                    "bill_number": null,
+                    "customer": "rrrr",
+                    "phone": "",
+                    "seller": "Umer javed",
+                    "date": "2025-10-20",
+                    "sub_total": "150.00",
+                    "discount": "0.00",
+                    "total": "150.00",
+                    "paid": "0.00",
+                    "change_amount": "0.00",
+                    "payment_method": "cash",
+                    "notes": "Sale processed from POS system",
+                    "warehouse_bill": false,
+                    "store_bill": true,
+                    "gst": "",
+                    "bank_name": "",
+                    "cheque": "",
+                    "bank_id": "",
+                    "ledger_id": "",
+                    "ledger_address": "",
+                    "discount_type": "amount",
+                    "formally_outstandings": "0.00",
+                    "created_at": "1760956661",
+                    "modified_at": "1760956661"
+                },
+                {
+                    "id": 12,
+                    "company_code": "2370",
+                    "bill_number": null,
+                    "customer": "umer",
+                    "phone": "",
+                    "seller": "Umer javed",
+                    "date": "2025-10-20",
+                    "sub_total": "150.00",
+                    "discount": "0.00",
+                    "total": "150.00",
+                    "paid": "0.00",
+                    "change_amount": "0.00",
+                    "payment_method": "cash",
+                    "notes": "Sale processed from POS system",
+                    "warehouse_bill": false,
+                    "store_bill": true,
+                    "gst": "",
+                    "bank_name": "",
+                    "cheque": "",
+                    "bank_id": "",
+                    "ledger_id": "",
+                    "ledger_address": "",
+                    "discount_type": "amount",
+                    "formally_outstandings": "0.00",
+                    "created_at": "1760955131",
+                    "modified_at": "1760955131"
+                },
+                {
+                    "id": 11,
+                    "company_code": "2370",
+                    "bill_number": null,
+                    "customer": "reee",
+                    "phone": "",
+                    "seller": "Umer javed",
+                    "date": "2025-10-20",
+                    "sub_total": "150.00",
+                    "discount": "0.00",
+                    "total": "150.00",
+                    "paid": "0.00",
+                    "change_amount": "0.00",
+                    "payment_method": "cash",
+                    "notes": "Sale processed from POS system",
+                    "warehouse_bill": false,
+                    "store_bill": true,
+                    "gst": "",
+                    "bank_name": "",
+                    "cheque": "",
+                    "bank_id": "",
+                    "ledger_id": "",
+                    "ledger_address": "",
+                    "discount_type": "amount",
+                    "formally_outstandings": "0.00",
+                    "created_at": "1760955008",
+                    "modified_at": "1760955008"
+                },
+                {
+                    "id": 10,
+                    "company_code": "2370",
+                    "bill_number": null,
+                    "customer": "tgggg",
+                    "phone": "",
+                    "seller": "Umer javed",
+                    "date": "2025-10-19",
+                    "sub_total": "150.00",
+                    "discount": "0.00",
+                    "total": "150.00",
+                    "paid": "0.00",
+                    "change_amount": "0.00",
+                    "payment_method": "cash",
+                    "notes": "Sale processed from POS system",
+                    "warehouse_bill": false,
+                    "store_bill": true,
+                    "gst": "",
+                    "bank_name": "",
+                    "cheque": "",
+                    "bank_id": "",
+                    "ledger_id": "",
+                    "ledger_address": "",
+                    "discount_type": "amount",
+                    "formally_outstandings": "0.00",
+                    "created_at": "1760868712",
+                    "modified_at": "1760868712"
+                },
+                {
+                    "id": 9,
+                    "company_code": "2370",
+                    "bill_number": null,
+                    "customer": "umer",
+                    "phone": "",
+                    "seller": "Umer javed",
+                    "date": "2025-10-19",
+                    "sub_total": "150.01",
+                    "discount": "0.00",
+                    "total": "150.01",
+                    "paid": "0.00",
+                    "change_amount": "0.00",
+                    "payment_method": "cash",
+                    "notes": "Sale processed from POS system",
+                    "warehouse_bill": false,
+                    "store_bill": true,
+                    "gst": "",
+                    "bank_name": "",
+                    "cheque": "",
+                    "bank_id": "",
+                    "ledger_id": "",
+                    "ledger_address": "",
+                    "discount_type": "amount",
+                    "formally_outstandings": "0.00",
+                    "created_at": "1760868651",
+                    "modified_at": "1760868651"
+                },
+                {
+                    "id": 8,
+                    "company_code": "2370",
+                    "bill_number": null,
+                    "customer": "d",
+                    "phone": "",
+                    "seller": "Umer javed",
+                    "date": "2025-10-19",
+                    "sub_total": "150.00",
+                    "discount": "0.00",
+                    "total": "150.00",
+                    "paid": "0.00",
+                    "change_amount": "0.00",
+                    "payment_method": "cash",
+                    "notes": "Sale processed from POS system",
+                    "warehouse_bill": false,
+                    "store_bill": true,
+                    "gst": "",
+                    "bank_name": "",
+                    "cheque": "",
+                    "bank_id": "",
+                    "ledger_id": "",
+                    "ledger_address": "",
+                    "discount_type": "amount",
+                    "formally_outstandings": "0.00",
+                    "created_at": "1760868375",
+                    "modified_at": "1760868375"
+                },
+                {
+                    "id": 7,
+                    "company_code": "2370",
+                    "bill_number": null,
+                    "customer": "d",
+                    "phone": "",
+                    "seller": "Umer javed",
+                    "date": "2025-10-19",
+                    "sub_total": "150.00",
+                    "discount": "0.00",
+                    "total": "150.00",
+                    "paid": "0.00",
+                    "change_amount": "0.00",
+                    "payment_method": "cash",
+                    "notes": "Sale processed from POS system",
+                    "warehouse_bill": false,
+                    "store_bill": true,
+                    "gst": "",
+                    "bank_name": "",
+                    "cheque": "",
+                    "bank_id": "",
+                    "ledger_id": "",
+                    "ledger_address": "",
+                    "discount_type": "amount",
+                    "formally_outstandings": "0.00",
+                    "created_at": "1760868213",
+                    "modified_at": "1760868213"
+                },
+                {
+                    "id": 6,
+                    "company_code": "2370",
+                    "bill_number": null,
+                    "customer": "asad",
+                    "phone": "",
+                    "seller": "Umer javed",
+                    "date": "2025-10-19",
+                    "sub_total": "150.00",
+                    "discount": "0.00",
+                    "total": "150.00",
+                    "paid": "0.00",
+                    "change_amount": "0.00",
+                    "payment_method": "cash",
+                    "notes": "Sale processed from POS system",
+                    "warehouse_bill": false,
+                    "store_bill": true,
+                    "gst": "",
+                    "bank_name": "",
+                    "cheque": "",
+                    "bank_id": "",
+                    "ledger_id": "",
+                    "ledger_address": "",
+                    "discount_type": "amount",
+                    "formally_outstandings": "0.00",
+                    "created_at": "1760868198",
+                    "modified_at": "1760868198"
+                },
+                {
+                    "id": 5,
+                    "company_code": "2370",
+                    "bill_number": null,
+                    "customer": "umer",
+                    "phone": "",
+                    "seller": "Umer javed",
+                    "date": "2025-10-19",
+                    "sub_total": "150.00",
+                    "discount": "0.00",
+                    "total": "150.00",
+                    "paid": "0.00",
+                    "change_amount": "0.00",
+                    "payment_method": "cash",
+                    "notes": "Sale processed from POS system",
+                    "warehouse_bill": false,
+                    "store_bill": true,
+                    "gst": "",
+                    "bank_name": "",
+                    "cheque": "",
+                    "bank_id": "",
+                    "ledger_id": "",
+                    "ledger_address": "",
+                    "discount_type": "amount",
+                    "formally_outstandings": "0.00",
+                    "created_at": "1760868171",
+                    "modified_at": "1760868171"
+                },
+                {
+                    "id": 4,
+                    "company_code": "2370",
+                    "bill_number": null,
+                    "customer": "umer",
+                    "phone": "",
+                    "seller": "Umer javed",
+                    "date": "2025-10-19",
+                    "sub_total": "150.00",
+                    "discount": "0.00",
+                    "total": "150.00",
+                    "paid": "0.00",
+                    "change_amount": "0.00",
+                    "payment_method": "cash",
+                    "notes": "Sale processed from POS system",
+                    "warehouse_bill": false,
+                    "store_bill": true,
+                    "gst": "",
+                    "bank_name": "",
+                    "cheque": "",
+                    "bank_id": "",
+                    "ledger_id": "",
+                    "ledger_address": "",
+                    "discount_type": "amount",
+                    "formally_outstandings": "0.00",
+                    "created_at": "1760868128",
+                    "modified_at": "1760868128"
+                }
+            ],
+            "pagination": {
+                "currentPage": 1,
+                "totalPages": 1,
+                "totalItems": 11,
+                "itemsPerPage": 50
+            }
+        }
+    }
+} 
 
 
 

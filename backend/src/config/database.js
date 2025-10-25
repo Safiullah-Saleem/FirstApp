@@ -82,7 +82,7 @@ const getPoolConfig = () => {
   const poolConfig = {
     max: parseInt(process.env.DB_POOL_MAX) || 3, // Reduced for Railway stability (Railway has connection limits)
     min: parseInt(process.env.DB_POOL_MIN) || 0, // Start with 0 for Railway efficiency
-    acquire: parseInt(process.env.DB_POOL_ACQUIRE) || 20000, // Reduced to 20s for Railway
+    acquire: parseInt(process.env.DB_POOL_ACQUIRE) || 60000, // Reduced to 20s for Railway
     idle: parseInt(process.env.DB_POOL_IDLE) || 5000, // Reduced idle time
     evict: parseInt(process.env.DB_POOL_EVICT) || 1000,
     // Additional Railway-specific pool options
@@ -206,7 +206,6 @@ const initializeDatabase = () => {
         // Additional Railway optimizations
         benchmark: false,
         queryType: 'SELECT',
-        isolationLevel: 'READ_COMMITTED',
       });
     } else {
       // Individual environment variables fallback

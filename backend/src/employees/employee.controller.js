@@ -49,29 +49,13 @@ const successResponse = (message, data = null) => ({
 // Get current timestamp as BIGINT
 const getCurrentTimestamp = () => Math.floor(Date.now() / 1000);
 
-// Validate employee ID parameter
-const validateEmployeeId = (employeeId) => {
-  if (!employeeId || employeeId === 'undefined' || employeeId === 'null' || employeeId === '') {
-    return false;
-  }
-  return true;
-};
-
 // Create Employee (for company admin)
 const createEmployee = async (req, res) => {
   try {
     console.log("=== CREATE EMPLOYEE ===");
     console.log("Request body:", JSON.stringify(req.body, null, 2));
 
-    const companyCode = req.user?.company_code;
-    
-    // Check if user is authenticated and has company code
-    if (!companyCode) {
-      return res.status(401).json(
-        errorResponse(401, "Unauthorized: Company code not found")
-      );
-    }
-
+    const companyCode = req.user.company_code;
     let employeeData;
 
     // Handle different request formats
@@ -91,14 +75,6 @@ const createEmployee = async (req, res) => {
     if (!employeeData.username || !employeeData.email) {
       return res.status(400).json(
         errorResponse(400, "Username and email are required")
-      );
-    }
-
-    // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(employeeData.email)) {
-      return res.status(400).json(
-        errorResponse(400, "Invalid email format")
       );
     }
 
@@ -143,9 +119,9 @@ const createEmployee = async (req, res) => {
 
     // Prepare employee data with proper field mapping
     const employeeCreateData = {
-      username: employeeData.username.trim(),
-      email: employeeData.email.toLowerCase().trim(),
-      password: employeeData.password || 'tempPassword123',
+      username: employeeData.username,
+      email: employeeData.email,
+      password: employeeData.password || 'tempPassword123', // Will be hashed in hook
       company_code: companyCode,
       company_name: company.company_name,
       phone: employeeData.phone || '',
@@ -195,21 +171,6 @@ const createEmployee = async (req, res) => {
 
   } catch (error) {
     console.error("❌ CREATE EMPLOYEE ERROR:", error);
-    
-    // Handle specific Sequelize errors
-    if (error.name === 'SequelizeUniqueConstraintError') {
-      return res.status(400).json(
-        errorResponse(400, "Employee with this email or username already exists")
-      );
-    }
-    
-    if (error.name === 'SequelizeValidationError') {
-      const validationErrors = error.errors.map(err => err.message).join(', ');
-      return res.status(400).json(
-        errorResponse(400, `Validation error: ${validationErrors}`)
-      );
-    }
-    
     res.status(500).json(
       errorResponse(500, error.message || "Internal server error")
     );
@@ -219,13 +180,7 @@ const createEmployee = async (req, res) => {
 // Get All Employees for a Company
 const getCompanyEmployees = async (req, res) => {
   try {
-    const companyCode = req.user?.company_code;
-    
-    if (!companyCode) {
-      return res.status(401).json(
-        errorResponse(401, "Unauthorized: Company code not found")
-      );
-    }
+    const companyCode = req.user.company_code;
     
     console.log("🔍 Fetching employees for company:", companyCode);
 
@@ -255,53 +210,21 @@ const getCompanyEmployees = async (req, res) => {
   }
 };
 
-// Get Specific Employee - FIXED VERSION
+// Get Specific Employee
 const getEmployee = async (req, res) => {
   try {
-    console.log("=== GET EMPLOYEE REQUEST ===");
-    console.log("Request params:", req.params);
-    console.log("Request user:", req.user);
-    
     const { employeeId } = req.params;
-    const companyCode = req.user?.company_code;
-
-    // Validate company code
-    if (!companyCode) {
-      return res.status(401).json(
-        errorResponse(401, "Unauthorized: Company code not found")
-      );
-    }
-
-    // Validate employee ID
-    if (!validateEmployeeId(employeeId)) {
-      return res.status(400).json(
-        errorResponse(400, "Valid Employee ID is required")
-      );
-    }
+    const companyCode = req.user.company_code;
 
     console.log("🔍 Fetching employee:", employeeId, "for company:", companyCode);
 
-    // Build safe search conditions
-    const searchConditions = [];
-    
-    if (employeeId && employeeId !== 'undefined' && employeeId !== 'null') {
-      searchConditions.push(
-        { employee_code: { [Op.eq]: employeeId } }, 
-        { email: { [Op.eq]: employeeId } },
-        { username: { [Op.eq]: employeeId } }
-      );
-    }
-
-    // If no valid search conditions, return error
-    if (searchConditions.length === 0) {
-      return res.status(400).json(
-        errorResponse(400, "Valid Employee ID is required")
-      );
-    }
-
     const employee = await Employee.findOne({
-      where: {
-        [Op.or]: searchConditions,
+      where: { 
+        [Op.or]: [
+          { employee_code: employeeId }, 
+          { email: employeeId },
+          { username: employeeId }
+        ],
         company_code: companyCode
       },
       attributes: { exclude: ["password"] }
@@ -309,7 +232,7 @@ const getEmployee = async (req, res) => {
 
     if (!employee) {
       return res.status(404).json(
-        errorResponse(404, `Employee not found with ID: ${employeeId}`)
+        errorResponse(404, "Employee not found")
       );
     }
 
@@ -322,14 +245,6 @@ const getEmployee = async (req, res) => {
     );
   } catch (error) {
     console.error("❌ GET EMPLOYEE ERROR:", error);
-    
-    // Handle specific database errors
-    if (error.name === 'SequelizeDatabaseError') {
-      return res.status(400).json(
-        errorResponse(400, "Invalid search parameter")
-      );
-    }
-    
     res.status(500).json(
       errorResponse(500, "Internal server error")
     );
@@ -341,23 +256,8 @@ const updateEmployee = async (req, res) => {
   try {
     console.log("=== UPDATE EMPLOYEE REQUEST ===");
     
-    const companyCode = req.user?.company_code;
+    const companyCode = req.user.company_code;
     const { employeeId } = req.params;
-    
-    // Validate company code
-    if (!companyCode) {
-      return res.status(401).json(
-        errorResponse(401, "Unauthorized: Company code not found")
-      );
-    }
-
-    // Validate employee ID
-    if (!validateEmployeeId(employeeId)) {
-      return res.status(400).json(
-        errorResponse(400, "Valid Employee ID is required")
-      );
-    }
-
     let employeeData;
 
     // Handle different request formats
@@ -461,9 +361,6 @@ const updateEmployee = async (req, res) => {
 
     console.log("✅ EMPLOYEE UPDATED SUCCESSFULLY:", employeeId);
 
-    // Refresh employee data
-    await employee.reload();
-
     const employeeResponse = buildEmployeeResponse(employee);
 
     res.json(
@@ -474,21 +371,6 @@ const updateEmployee = async (req, res) => {
 
   } catch (error) {
     console.error("❌ UPDATE EMPLOYEE ERROR:", error);
-    
-    // Handle specific Sequelize errors
-    if (error.name === 'SequelizeUniqueConstraintError') {
-      return res.status(400).json(
-        errorResponse(400, "Email or username already exists")
-      );
-    }
-    
-    if (error.name === 'SequelizeValidationError') {
-      const validationErrors = error.errors.map(err => err.message).join(', ');
-      return res.status(400).json(
-        errorResponse(400, `Validation error: ${validationErrors}`)
-      );
-    }
-    
     res.status(500).json(
       errorResponse(500, error.message || "Internal server error")
     );
@@ -499,21 +381,7 @@ const updateEmployee = async (req, res) => {
 const deleteEmployee = async (req, res) => {
   try {
     const { employeeId } = req.params;
-    const companyCode = req.user?.company_code;
-
-    // Validate company code
-    if (!companyCode) {
-      return res.status(401).json(
-        errorResponse(401, "Unauthorized: Company code not found")
-      );
-    }
-
-    // Validate employee ID
-    if (!validateEmployeeId(employeeId)) {
-      return res.status(400).json(
-        errorResponse(400, "Valid Employee ID is required")
-      );
-    }
+    const companyCode = req.user.company_code;
 
     console.log("🗑️ Deleting employee:", employeeId, "from company:", companyCode);
 
@@ -536,8 +404,7 @@ const deleteEmployee = async (req, res) => {
 
     // Soft delete by updating status to inactive
     await employee.update({
-      status: 'inactive',
-      modified_at: getCurrentTimestamp()
+      status: 'inactive'
     });
 
     console.log("✅ EMPLOYEE DELETED SUCCESSFULLY:", employeeId);
@@ -630,14 +497,8 @@ const employeeLogin = async (req, res) => {
 // Get Employee Profile
 const getEmployeeProfile = async (req, res) => {
   try {
-    const employeeId = req.user?.id;
-    const companyCode = req.user?.company_code;
-
-    if (!employeeId || !companyCode) {
-      return res.status(401).json(
-        errorResponse(401, "Unauthorized: User information not found")
-      );
-    }
+    const employeeId = req.user.id;
+    const companyCode = req.user.company_code;
 
     console.log("🔍 Fetching employee profile for:", employeeId);
 

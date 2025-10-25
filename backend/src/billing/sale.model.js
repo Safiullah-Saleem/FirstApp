@@ -297,7 +297,7 @@ const Sale = sequelize.define(
         try {
           // If ledger_id provided, update ledger
           if (sale.ledger_id) {
-            const LedgerAccount = require('../../ledger/ledger.account.model');
+            const LedgerAccount = require('../../ledger/ledger.account.model.js');
             const ledger = await LedgerAccount.findOne({ where: { _id: sale.ledger_id } });
             if (ledger) {
               await LedgerAccount.update({
@@ -312,7 +312,7 @@ const Sale = sequelize.define(
           
           // If bank_id provided, update bank balance
           if (sale.bank_id) {
-            const BankAccount = require('../../bank/bank.account.model');
+            const BankAccount = require('../../bank/bank.account.model.js');
             const bank = await BankAccount.findOne({ where: { _id: sale.bank_id } });
             if (bank) {
               await BankAccount.update({
@@ -325,7 +325,7 @@ const Sale = sequelize.define(
           
           // If cash_id provided, update cash balance
           if (sale.cash_id) {
-            const CashAccount = require('../../cash/cash.account.model');
+            const CashAccount = require('../../cash/cash.account.model.js');
             const cash = await CashAccount.findOne({ where: { _id: sale.cash_id } });
             if (cash) {
               await CashAccount.update({
