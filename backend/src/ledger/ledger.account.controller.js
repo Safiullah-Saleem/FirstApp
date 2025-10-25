@@ -603,9 +603,10 @@ const deleteLedger = async (data, res) => {
 // 🔹 GET LEDGER HISTORY (Integration with Sales/Purchases) - FIXED VERSION
 const getLedgerHistory = async (data, res) => {
   try {
-    const { id } = data;
+    const { id, _id } = data;
+    const ledgerId = id || _id; // Support both id and _id parameters
     
-    if (!id) {
+    if (!ledgerId) {
       return res.json({
         response: {
           status: {
@@ -616,7 +617,7 @@ const getLedgerHistory = async (data, res) => {
       });
     }
 
-    const ledger = await LedgerAccount.findOne({ where: { id } });
+    const ledger = await LedgerAccount.findOne({ where: { id: ledgerId } });
     if (!ledger) {
       return res.json({
         response: {
@@ -633,23 +634,26 @@ const getLedgerHistory = async (data, res) => {
     let purchases = [];
     
     try {
-      // ✅ FIXED: Use correct path to purchase model
+      // ✅ FIXED: Use correct paths to models
       const Purchase = require('../billing/purchase.model');
+      const Sale = require('../billing/sale.model');
       
+      // Get purchases linked to this ledger
       purchases = await Purchase.findAll({
-        where: { ledger_id: id },
+        where: { ledger_id: ledgerId },
         order: [['date', 'DESC']]
       });
       
-      // If you have sales model, uncomment this:
-      // const Sale = require('./sale.model');
-      // sales = await Sale.findAll({
-      //   where: { ledger_id: id },
-      //   order: [['date', 'DESC']]
-      // });
+      // Get sales linked to this ledger
+      sales = await Sale.findAll({
+        where: { ledger_id: ledgerId },
+        order: [['date', 'DESC']]
+      });
+      
+      console.log(`✅ Found ${purchases.length} purchases and ${sales.length} sales for ledger ${ledgerId}`);
       
     } catch (importError) {
-      console.log('Purchase model not available:', importError.message);
+      console.log('Models not available:', importError.message);
     }
 
     res.json({

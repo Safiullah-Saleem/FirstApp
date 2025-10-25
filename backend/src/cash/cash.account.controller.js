@@ -306,15 +306,16 @@ const updateCashBalance = async (data, res) => {
 // 🔹 GET CASH HISTORY (Integration with Sales/Purchases)
 const getCashHistory = async (data, res) => {
   try {
-    const { _id } = data;
+    const { _id, id } = data;
+    const cashId = _id || id; // Support both _id and id parameters
 
-    if (!_id) {
+    if (!cashId) {
       return res.json({
         response: badRequest("Cash account ID is required")
       });
     }
 
-    const cashAccount = await CashAccount.findOne({ where: { _id } });
+    const cashAccount = await CashAccount.findOne({ where: { _id: cashId } });
     if (!cashAccount) {
       return res.json({
         response: notFound("Cash account not found")
@@ -330,12 +331,12 @@ const getCashHistory = async (data, res) => {
       const Purchase = require('../billing/purchase.model.js');
 
       sales = await Sale.findAll({
-        where: { cash_id: _id },
+        where: { cash_id: cashId },
         order: [['date', 'DESC']]
       });
 
       purchases = await Purchase.findAll({
-        where: { cash_id: _id },
+        where: { cash_id: cashId },
         order: [['date', 'DESC']]
       });
     } catch (importError) {

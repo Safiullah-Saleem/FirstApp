@@ -2,10 +2,11 @@ const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/database');
 
 const CashAccount = sequelize.define('CashAccount', {
-  id: {
+  _id: {
     type: DataTypes.UUID,
     defaultValue: DataTypes.UUIDV4,
-    primaryKey: true
+    primaryKey: true,
+    field: 'id'
   },
   company_code: {
     type: DataTypes.STRING,
