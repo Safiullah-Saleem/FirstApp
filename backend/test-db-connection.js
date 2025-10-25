@@ -10,7 +10,7 @@
  */
 
 require('dotenv').config();
-const { testConnection, getConnectionHealth, validateConnectionParams } = require('./src/config/database');
+const { testConnection, getConnectionHealth, validateConnectionParams, connectWithRetry } = require('./src/config/database');
 
 async function runDatabaseTests() {
   console.log('🧪 Starting Railway Database Connection Tests...\n');
@@ -59,68 +59,107 @@ async function runDatabaseTests() {
     console.log('');
   }
   
-  // Test 3: Connection Test
-  console.log('🔌 Test 3: Database Connection');
-  console.log('==============================');
+  // Test 3: Connection Test with Railway Retry Logic
+  console.log('🔌 Test 3: Database Connection with Railway Retry Logic');
+  console.log('=======================================================');
   try {
-    await testConnection();
-    console.log('✅ Connection test passed');
+    await connectWithRetry(async () => {
+      await testConnection();
+    }, 10, 3000); // 10 retries with 3s base delay for Railway free tier
+    console.log('✅ Connection test passed with retry logic');
     
     // Additional Railway-specific connection test
     const { sequelize } = require('./src/config/database');
     
-    // Test SSL status
+    // Test SSL status with retry
     try {
-      const [sslResults] = await sequelize.query('SELECT ssl_is_used() as ssl_enabled');
+      const [sslResults] = await connectWithRetry(async () => {
+        return await sequelize.query('SELECT ssl_is_used() as ssl_enabled');
+      }, 5, 2000);
       console.log(`🔒 SSL enabled: ${sslResults[0].ssl_enabled ? 'Yes ✅' : 'No ❌'}`);
     } catch (sslError) {
-      console.log(`🔒 SSL test failed: ${sslError.message}`);
+      console.log(`🔒 SSL test failed after retries: ${sslError.message}`);
     }
     
-    // Test response time
+    // Test response time with retry
     const perfStart = Date.now();
-    await sequelize.query('SELECT 1 as test');
+    await connectWithRetry(async () => {
+      await sequelize.query('SELECT 1 as test');
+    }, 3, 1000);
     const perfEnd = Date.now();
     const responseTime = perfEnd - perfStart;
     console.log(`⚡ Response time: ${responseTime}ms ${responseTime < 100 ? '✅' : responseTime < 500 ? '⚠️' : '❌'}`);
     
+    // Test Railway-specific network diagnostics
+    console.log('🌐 Railway Network Diagnostics:');
+    try {
+      const [networkResults] = await connectWithRetry(async () => {
+        return await sequelize.query(`
+          SELECT 
+            inet_server_addr() as server_ip,
+            inet_server_port() as server_port,
+            current_database() as database_name,
+            current_user as current_user,
+            version() as postgres_version
+        `);
+      }, 3, 1000);
+      
+      const network = networkResults[0];
+      console.log(`   Server IP: ${network.server_ip || 'N/A'}`);
+      console.log(`   Server Port: ${network.server_port || 'N/A'}`);
+      console.log(`   Database: ${network.database_name}`);
+      console.log(`   User: ${network.current_user}`);
+      console.log(`   PostgreSQL: ${network.postgres_version.split(' ')[0]} ${network.postgres_version.split(' ')[1]}`);
+    } catch (networkError) {
+      console.log(`   Network diagnostics failed: ${networkError.message}`);
+    }
+    
     console.log('');
   } catch (error) {
-    console.error('❌ Connection test failed:', error.message);
+    console.error('❌ Connection test failed after retries:', error.message);
     console.error(`   Error Type: ${error.constructor.name}`);
     console.error(`   Error Code: ${error.code || 'N/A'}`);
     
-    // Railway-specific error diagnostics
+    // Enhanced Railway-specific error diagnostics
     if (error.message.includes('SSL')) {
       console.error('   🔒 SSL Error - Check Railway SSL configuration');
+      console.error('      Try adding ?ssl=require to your DATABASE_URL');
     }
-    if (error.message.includes('timeout')) {
-      console.error('   ⏱️  Timeout Error - Check Railway database status');
+    if (error.message.includes('timeout') || error.message.includes('ETIMEDOUT')) {
+      console.error('   ⏱️  Timeout Error - Railway database may be sleeping (free tier)');
+      console.error('      Wait 30-60 seconds and try again');
     }
     if (error.message.includes('ENOTFOUND')) {
       console.error('   🌐 DNS Error - Check Railway DATABASE_URL hostname');
+      console.error('      Verify DATABASE_URL format: postgresql://user:pass@host:port/db');
     }
     if (error.message.includes('ECONNREFUSED')) {
-      console.error('   🚫 Connection Refused - Check Railway database service');
+      console.error('   🚫 Connection Refused - Railway database service may be down');
+      console.error('      Check Railway dashboard for service status');
     }
     console.log('');
   }
   
-  // Test 4: Health Check
-  console.log('💚 Test 4: Health Check');
-  console.log('========================');
+  // Test 4: Health Check with Railway Retry Logic
+  console.log('💚 Test 4: Health Check with Railway Retry Logic');
+  console.log('================================================');
   try {
-    const health = await getConnectionHealth();
+    const health = await connectWithRetry(async () => {
+      return await getConnectionHealth();
+    }, 5, 2000); // 5 retries with 2s base delay
+    
     console.log('Health Status:', health.status);
     if (health.pool) {
       console.log('Pool Status:', health.pool);
+      console.log(`   Active connections: ${health.pool.size}/${health.pool.max}`);
+      console.log(`   Available connections: ${health.pool.available}`);
     }
     if (health.error) {
       console.log('Error:', health.error);
     }
     console.log('');
   } catch (error) {
-    console.error('❌ Health check failed:', error.message);
+    console.error('❌ Health check failed after retries:', error.message);
     console.log('');
   }
   
@@ -142,6 +181,33 @@ async function runDatabaseTests() {
   console.log('✅ Verify SSL configuration is properly set');
   console.log('✅ Monitor connection pool usage in Railway dashboard');
   console.log('✅ Check Railway service limits and quotas');
+  
+  console.log('\n🚀 Railway-Specific Solutions for ETIMEDOUT:');
+  console.log('============================================');
+  console.log('1. Free Tier Sleep Issues:');
+  console.log('   - Railway free tier databases sleep after inactivity');
+  console.log('   - First connection after sleep takes 30-60 seconds');
+  console.log('   - Solution: Wait longer or upgrade to paid plan');
+  console.log('');
+  console.log('2. Network Timeout Solutions:');
+  console.log('   - Connection timeouts increased to 60s in config');
+  console.log('   - Retry logic with exponential backoff implemented');
+  console.log('   - TCP keep-alive enabled for persistent connections');
+  console.log('');
+  console.log('3. SSL Certificate Handling:');
+  console.log('   - SSL required for Railway PostgreSQL');
+  console.log('   - rejectUnauthorized: false to handle cert issues');
+  console.log('   - Try adding ?ssl=require to DATABASE_URL if issues persist');
+  console.log('');
+  console.log('4. Connection Pool Optimization:');
+  console.log('   - Reduced max connections to 3 (Railway limit)');
+  console.log('   - Increased acquire timeout to 120s');
+  console.log('   - Enhanced connection validation');
+  console.log('');
+  console.log('5. Retry Strategy:');
+  console.log('   - 10 retry attempts with exponential backoff');
+  console.log('   - 2s base delay, doubling each retry');
+  console.log('   - Handles ETIMEDOUT, ECONNRESET, SSL errors');
   
   console.log('\n📞 If issues persist:');
   console.log('===================');

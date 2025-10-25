@@ -2,11 +2,10 @@ const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/database');
 
 const LedgerAccount = sequelize.define('LedgerAccount', {
-  _id: {
+  id: {
     type: DataTypes.UUID,
     defaultValue: DataTypes.UUIDV4,
-    primaryKey: true,
-    field: '_id'
+    primaryKey: true
   },
   name: {
     type: DataTypes.STRING,

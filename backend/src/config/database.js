@@ -82,8 +82,8 @@ const getPoolConfig = () => {
   const poolConfig = {
     max: parseInt(process.env.DB_POOL_MAX) || 3, // Reduced for Railway stability (Railway has connection limits)
     min: parseInt(process.env.DB_POOL_MIN) || 0, // Start with 0 for Railway efficiency
-    acquire: parseInt(process.env.DB_POOL_ACQUIRE) || 60000, // Reduced to 20s for Railway
-    idle: parseInt(process.env.DB_POOL_IDLE) || 5000, // Reduced idle time
+    acquire: parseInt(process.env.DB_POOL_ACQUIRE) || 120000, // Increased to 120s for Railway free tier wake-up
+    idle: parseInt(process.env.DB_POOL_IDLE) || 10000, // Increased idle time for Railway stability
     evict: parseInt(process.env.DB_POOL_EVICT) || 1000,
     // Additional Railway-specific pool options
     handleDisconnects: true,
@@ -91,11 +91,11 @@ const getPoolConfig = () => {
       // Validate connection before use
       return client && !client._ending && !client._destroyed;
     },
-    // Railway-specific optimizations
-    createTimeoutMillis: 20000,
-    destroyTimeoutMillis: 5000,
-    reapIntervalMillis: 1000,
-    createRetryIntervalMillis: 200,
+    // Railway-specific optimizations with extended timeouts
+    createTimeoutMillis: 60000, // Increased to 60s for Railway free tier
+    destroyTimeoutMillis: 10000, // Increased destroy timeout
+    reapIntervalMillis: 2000, // Increased reap interval
+    createRetryIntervalMillis: 1000, // Increased retry interval
     propagateCreateError: false,
   };
   
@@ -159,26 +159,29 @@ const initializeDatabase = () => {
         dialect: "postgres",
         dialectOptions: {
           ssl: sslConfig,
-          // Railway-specific connection options
-          connectTimeout: 20000, // Reduced to 20s for Railway
-          requestTimeout: 20000, // Reduced to 20s for Railway
+          // Railway-specific connection options with extended timeouts
+          connectTimeout: 60000, // Increased to 60s for Railway free tier wake-up
+          requestTimeout: 60000, // Increased to 60s for Railway free tier wake-up
           // Additional Railway optimizations
           keepAlive: true,
           keepAliveInitialDelayMillis: 0,
           // Enhanced timeout handling for Railway
-          statement_timeout: 20000,
-          idle_in_transaction_session_timeout: 20000,
+          statement_timeout: 60000, // Increased statement timeout
+          idle_in_transaction_session_timeout: 60000, // Increased idle timeout
           // Railway-specific connection parameters
           application_name: 'railway-app',
           // Additional Railway optimizations
           binary: false,
           parseInputDatesAsUTC: true,
+          // Railway-specific network optimizations
+          tcpKeepAlive: true,
+          tcpKeepAliveInitialDelayMillis: 0,
         },
         logging: logging,
         pool: poolConfig,
-        // Enhanced Railway-specific connection options
+        // Enhanced Railway-specific connection options with robust retry logic
         retry: {
-          max: 5, // Increased retry attempts for Railway
+          max: 10, // Increased retry attempts for Railway free tier
           match: [
             /ConnectionError/,
             /SequelizeConnectionError/,
@@ -194,9 +197,14 @@ const initializeDatabase = () => {
             /ECONNREFUSED/,
             /SSL/,
             /certificate/,
+            /Connection terminated/,
+            /Connection lost/,
+            /Connection closed/,
+            /Database is starting/,
+            /Database is sleeping/,
           ],
-          backoffBase: 1000,
-          backoffExponent: 1.5,
+          backoffBase: 2000, // Increased base delay for Railway
+          backoffExponent: 2.0, // More aggressive exponential backoff
         },
         // Railway-specific query options
         define: {
@@ -221,18 +229,21 @@ const initializeDatabase = () => {
           dialect: "postgres",
           dialectOptions: {
             ssl: sslConfig,
-            connectTimeout: 20000,
-            requestTimeout: 20000,
-            statement_timeout: 20000,
-            idle_in_transaction_session_timeout: 20000,
+            connectTimeout: 60000, // Increased to 60s for Railway compatibility
+            requestTimeout: 60000, // Increased to 60s for Railway compatibility
+            statement_timeout: 60000, // Increased statement timeout
+            idle_in_transaction_session_timeout: 60000, // Increased idle timeout
             application_name: 'local-app',
             binary: false,
             parseInputDatesAsUTC: true,
+            // Railway-specific network optimizations
+            tcpKeepAlive: true,
+            tcpKeepAliveInitialDelayMillis: 0,
           },
           logging: logging,
           pool: poolConfig,
           retry: {
-            max: 5,
+            max: 10, // Increased retry attempts for Railway compatibility
             match: [
               /ConnectionError/,
               /SequelizeConnectionError/,
@@ -248,9 +259,14 @@ const initializeDatabase = () => {
               /ECONNREFUSED/,
               /SSL/,
               /certificate/,
+              /Connection terminated/,
+              /Connection lost/,
+              /Connection closed/,
+              /Database is starting/,
+              /Database is sleeping/,
             ],
-            backoffBase: 1000,
-            backoffExponent: 1.5,
+            backoffBase: 2000, // Increased base delay for Railway
+            backoffExponent: 2.0, // More aggressive exponential backoff
           },
           define: {
             timestamps: true,
@@ -272,25 +288,92 @@ const initializeDatabase = () => {
 // Initialize the connection
 sequelize = initializeDatabase();
 
-// Enhanced test connection function with detailed Railway debugging
+// Enhanced Railway-specific connection retry wrapper with timeout
+const connectWithRetry = async (operation, maxRetries = 10, baseDelay = 2000, timeoutMs = 60000) => {
+  let lastError;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`🔄 Connection attempt ${attempt}/${maxRetries}...`);
+
+      // Check if connection manager is still open before attempting operation
+      if (sequelize && sequelize.connectionManager && sequelize.connectionManager.pool && sequelize.connectionManager.pool._closed) {
+        console.log(`⚠️  Connection pool is closed, skipping attempt ${attempt}`);
+        throw new Error('Connection pool is closed');
+      }
+
+      // Wrap the operation with a timeout
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Operation timed out')), timeoutMs);
+      });
+
+      const result = await Promise.race([operation(), timeoutPromise]);
+      console.log(`✅ Connection successful on attempt ${attempt}`);
+      return result;
+    } catch (error) {
+      lastError = error;
+      console.error(`❌ Attempt ${attempt} failed: ${error.message}`);
+
+      // Check if this is a Railway-specific error that should trigger retry
+      const shouldRetry = error.message.includes('ETIMEDOUT') ||
+                         error.message.includes('ECONNRESET') ||
+                         error.message.includes('ECONNREFUSED') ||
+                         error.message.includes('timeout') ||
+                         error.message.includes('Connection terminated') ||
+                         error.message.includes('Connection lost') ||
+                         error.message.includes('Database is starting') ||
+                         error.message.includes('Database is sleeping') ||
+                         error.message.includes('SSL') ||
+                         error.message.includes('certificate') ||
+                         error.message.includes('Operation timed out') ||
+                         error.message.includes('ConnectionManager.getConnection was called after the connection manager was closed');
+
+      // Don't retry if connection manager is closed
+      if (error.message.includes('ConnectionManager.getConnection was called after the connection manager was closed')) {
+        console.error(`❌ Connection manager is closed, cannot retry`);
+        throw error;
+      }
+
+      if (!shouldRetry || attempt === maxRetries) {
+        console.error(`❌ Max retries reached or non-retryable error`);
+        throw error;
+      }
+
+      // Calculate exponential backoff delay
+      const delay = baseDelay * Math.pow(2, attempt - 1);
+      console.log(`⏳ Waiting ${delay}ms before retry...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+
+  throw lastError;
+};
+
+// Enhanced test connection function with detailed Railway debugging and retry logic
 const testConnection = async () => {
   try {
-    console.log("🔍 Testing database connection...");
+    console.log("🔍 Testing database connection with Railway retry logic...");
     
-    // Test basic connection
-    await sequelize.authenticate();
-    console.log("✅ PostgreSQL connection established successfully.");
+    // Test basic connection with retry
+    await connectWithRetry(async () => {
+      await sequelize.authenticate();
+      console.log("✅ PostgreSQL connection established successfully.");
+    });
     
-    // Test database sync
-    await sequelize.sync({ alter: false });
-    console.log("✅ Database tables verified and ready.");
+    // Test database sync with retry
+    await connectWithRetry(async () => {
+      await sequelize.sync({ alter: false });
+      console.log("✅ Database tables verified and ready.");
+    });
     
     // Test pool status
     const pool = sequelize.connectionManager.pool;
     console.log(`📊 Connection pool status: ${pool.size} active, ${pool.available} available`);
     
-    // Test a simple query
-    const [results] = await sequelize.query('SELECT NOW() as current_time');
+    // Test a simple query with retry
+    const [results] = await connectWithRetry(async () => {
+      return await sequelize.query('SELECT NOW() as current_time');
+    });
     console.log(`⏰ Database time: ${results[0].current_time}`);
     
     console.log("🎉 Database connection test completed successfully!");
@@ -304,12 +387,19 @@ const testConnection = async () => {
     // Railway-specific error handling
     if (error.message.includes('SSL')) {
       console.error("🔒 SSL Error detected - check Railway SSL configuration");
+      console.error("   Try adding ?ssl=require to your DATABASE_URL");
     }
-    if (error.message.includes('timeout')) {
-      console.error("⏱️  Timeout Error - check Railway connection limits");
+    if (error.message.includes('timeout') || error.message.includes('ETIMEDOUT')) {
+      console.error("⏱️  Timeout Error - Railway database may be sleeping (free tier)");
+      console.error("   Wait 30-60 seconds and try again");
     }
     if (error.message.includes('ENOTFOUND')) {
       console.error("🌐 DNS Error - check Railway DATABASE_URL hostname");
+      console.error("   Verify DATABASE_URL format: postgresql://user:pass@host:port/db");
+    }
+    if (error.message.includes('ECONNREFUSED')) {
+      console.error("🚫 Connection Refused - Railway database service may be down");
+      console.error("   Check Railway dashboard for service status");
     }
     
     throw error;
@@ -364,5 +454,6 @@ module.exports = {
   testConnection, 
   getConnectionHealth, 
   closeConnection,
-  validateConnectionParams 
+  validateConnectionParams,
+  connectWithRetry // Export the retry function for use in other modules
 };

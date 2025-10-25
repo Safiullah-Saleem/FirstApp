@@ -1,4 +1,4 @@
-const { DataTypes } = require("sequelize");
+const { DataTypes, Op } = require("sequelize");
 const { sequelize } = require("../config/database");
 
 const Sale = sequelize.define(
@@ -292,48 +292,89 @@ const Sale = sequelize.define(
 
       afterCreate: async (sale) => {
         console.log(`✅ Sale recorded for item: ${sale.name}, Quantity: ${sale.quantity}`);
-        
-        // ✅ AUTO-INTEGRATION LOGIC
+
+        // ✅ AUTO-INTEGRATION LOGIC - ADD NEW ENTRIES INSTEAD OF UPDATING
         try {
-          // If ledger_id provided, update ledger
+          // If ledger_id provided, add new ledger transaction entry
           if (sale.ledger_id) {
-            const LedgerAccount = require('../../ledger/ledger.account.model.js');
-            const ledger = await LedgerAccount.findOne({ where: { _id: sale.ledger_id } });
+            const LedgerAccount = require('../../ledger/ledger.account.model');
+            const ledger = await LedgerAccount.findOne({ where: { id: sale.ledger_id } });
             if (ledger) {
               await LedgerAccount.update({
                 saleTotal: parseFloat(ledger.saleTotal || 0) + parseFloat(sale.total_price || 0),
                 depositedSalesTotal: parseFloat(ledger.depositedSalesTotal || 0) + parseFloat(sale.paid || 0),
                 currentBalance: parseFloat(ledger.currentBalance || 0) + (parseFloat(sale.total_price || 0) - parseFloat(sale.paid || 0)),
                 modified_at: Math.floor(Date.now() / 1000)
-              }, { where: { _id: sale.ledger_id } });
+              }, { where: { id: sale.ledger_id } });
               console.log(`✅ Ledger ${sale.ledger_id} updated with sale`);
             }
+
+            const LedgerTransaction = require('../../ledger/ledger.transaction.model.js');
+            await LedgerTransaction.create({
+              ledger_id: sale.ledger_id,
+              company_code: sale.company_code,
+              transaction_type: 'sale',
+              sale_id: sale.id,
+              amount: parseFloat(sale.total_price || 0),
+              paid_amount: parseFloat(sale.paid || 0),
+              balance_change: parseFloat(sale.total_price || 0) - parseFloat(sale.paid || 0),
+              description: `Sale for item: ${sale.name}`,
+              date: sale.date,
+              created_at: Math.floor(Date.now() / 1000)
+            });
+            console.log(`✅ New ledger transaction entry added for sale`);
           }
-          
-          // If bank_id provided, update bank balance
+
+          // If bank_id provided, add new bank transaction entry
           if (sale.bank_id) {
-            const BankAccount = require('../../bank/bank.account.model.js');
-            const bank = await BankAccount.findOne({ where: { _id: sale.bank_id } });
+            const BankAccount = require('../../bank/bank.account.model');
+            const bank = await BankAccount.findOne({ where: { id: sale.bank_id } });
             if (bank) {
               await BankAccount.update({
                 balance: parseFloat(bank.balance || 0) + parseFloat(sale.paid || 0),
                 modified_at: Math.floor(Date.now() / 1000)
-              }, { where: { _id: sale.bank_id } });
+              }, { where: { id: sale.bank_id } });
               console.log(`✅ Bank ${sale.bank_id} balance updated`);
             }
+
+            const BankTransaction = require('../../bank/bank.transaction.model.js');
+            await BankTransaction.create({
+              bank_id: sale.bank_id,
+              company_code: sale.company_code,
+              transaction_type: 'sale',
+              sale_id: sale.id,
+              amount: parseFloat(sale.paid || 0),
+              description: `Sale payment for item: ${sale.name}`,
+              date: sale.date,
+              created_at: Math.floor(Date.now() / 1000)
+            });
+            console.log(`✅ New bank transaction entry added for sale`);
           }
-          
-          // If cash_id provided, update cash balance
+
+          // If cash_id provided, add new cash transaction entry
           if (sale.cash_id) {
-            const CashAccount = require('../../cash/cash.account.model.js');
-            const cash = await CashAccount.findOne({ where: { _id: sale.cash_id } });
+            const CashAccount = require('../../cash/cash.account.model');
+            const cash = await CashAccount.findOne({ where: { id: sale.cash_id } });
             if (cash) {
               await CashAccount.update({
                 balance: parseFloat(cash.balance || 0) + parseFloat(sale.paid || 0),
                 modified_at: Math.floor(Date.now() / 1000)
-              }, { where: { _id: sale.cash_id } });
+              }, { where: { id: sale.cash_id } });
               console.log(`✅ Cash ${sale.cash_id} balance updated`);
             }
+
+            const CashTransaction = require('../../cash/cash.transaction.model.js');
+            await CashTransaction.create({
+              cash_id: sale.cash_id,
+              company_code: sale.company_code,
+              transaction_type: 'sale',
+              sale_id: sale.id,
+              amount: parseFloat(sale.paid || 0),
+              description: `Sale payment for item: ${sale.name}`,
+              date: sale.date,
+              created_at: Math.floor(Date.now() / 1000)
+            });
+            console.log(`✅ New cash transaction entry added for sale`);
           }
         } catch (integrationError) {
           console.log('Integration modules not available yet:', integrationError.message);

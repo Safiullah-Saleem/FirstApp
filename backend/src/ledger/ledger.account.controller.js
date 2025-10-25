@@ -116,9 +116,9 @@ const getLedgersByCompany = async (data, res) => {
 // 🔹 GET SINGLE LEDGER BY ID
 const getLedgerById = async (data, res) => {
   try {
-    const { _id } = data;
+    const { id } = data;
     
-    if (!_id) {
+    if (!id) {
       return res.json({
         response: {
           status: {
@@ -130,7 +130,7 @@ const getLedgerById = async (data, res) => {
     }
 
     const ledger = await LedgerAccount.findOne({
-      where: { _id }
+      where: { id }
     });
 
     if (!ledger) {
@@ -188,7 +188,7 @@ const saveLedger = async (data, res) => {
     }
 
     const ledgerData = {
-      _id: ledger._id, // Use provided _id or auto-generate
+      id: ledger.id || ledger._id, // Use provided id or _id or auto-generate
       name,
       company_code,
       ledgerType,
@@ -211,7 +211,7 @@ const saveLedger = async (data, res) => {
           statusMessage: "Ledger created successfully"
         },
         data: { 
-          ledger: newLedger._id 
+          ledger: newLedger.id 
         }
       }
     });
@@ -223,9 +223,9 @@ const saveLedger = async (data, res) => {
 // 🔹 UPDATE LEDGER GENERAL INFORMATION
 const updateLedgerGeneral = async (data, res) => {
   try {
-    const { _id, ...updateData } = data;
+    const { id, ...updateData } = data;
     
-    if (!_id) {
+    if (!id) {
       return res.json({
         response: {
           status: {
@@ -236,7 +236,7 @@ const updateLedgerGeneral = async (data, res) => {
       });
     }
 
-    const existingLedger = await LedgerAccount.findOne({ where: { _id } });
+    const existingLedger = await LedgerAccount.findOne({ where: { id } });
     if (!existingLedger) {
       return res.json({
         response: {
@@ -259,7 +259,7 @@ const updateLedgerGeneral = async (data, res) => {
     updateData.modified_at = Math.floor(Date.now() / 1000);
 
     await LedgerAccount.update(updateData, {
-      where: { _id }
+      where: { id }
     });
 
     res.json({
@@ -269,7 +269,7 @@ const updateLedgerGeneral = async (data, res) => {
           statusMessage: "Ledger updated successfully"
         },
         data: { 
-          ledger: _id 
+          ledger: id 
         }
       }
     });
@@ -281,9 +281,9 @@ const updateLedgerGeneral = async (data, res) => {
 // 🔹 UPDATE LEDGER
 const updateLedger = async (data, res) => {
   try {
-    const { _id, ...updateData } = data;
+    const { id, ...updateData } = data;
     
-    if (!_id) {
+    if (!id) {
       return res.json({
         response: {
           status: {
@@ -294,7 +294,7 @@ const updateLedger = async (data, res) => {
       });
     }
 
-    const existingLedger = await LedgerAccount.findOne({ where: { _id } });
+    const existingLedger = await LedgerAccount.findOne({ where: { id } });
     if (!existingLedger) {
       return res.json({
         response: {
@@ -318,7 +318,7 @@ const updateLedger = async (data, res) => {
     filteredData.modified_at = Math.floor(Date.now() / 1000);
 
     await LedgerAccount.update(filteredData, {
-      where: { _id }
+      where: { id }
     });
 
     res.json({
@@ -328,7 +328,7 @@ const updateLedger = async (data, res) => {
           statusMessage: "Ledger updated successfully"
         },
         data: { 
-          ledger: _id 
+          ledger: id 
         }
       }
     });
@@ -406,7 +406,7 @@ const updateSaleLedger = async (data, res) => {
       currentBalance: parseFloat(ledger.currentBalance || 0) + balanceChange,
       modified_at: Math.floor(Date.now() / 1000)
     }, {
-      where: { _id: ledgerId }
+      where: { id: ledgerId }
     });
 
     // Here you would typically also save the sale transaction details
@@ -505,7 +505,7 @@ const updatePurchaseLedger = async (data, res) => {
       currentBalance: newCurrentBalance,
       modified_at: Math.floor(Date.now() / 1000)
     }, {
-      where: { _id: ledgerId }
+      where: { id: ledgerId }
     });
 
     // Save purchase transaction details if purchaseData is provided
@@ -555,9 +555,9 @@ const updatePurchaseLedger = async (data, res) => {
 // 🔹 DELETE LEDGER
 const deleteLedger = async (data, res) => {
   try {
-    const { _id } = data;
+    const { id } = data;
     
-    if (!_id) {
+    if (!id) {
       return res.json({
         response: {
           status: {
@@ -568,7 +568,7 @@ const deleteLedger = async (data, res) => {
       });
     }
 
-    const existingLedger = await LedgerAccount.findOne({ where: { _id } });
+    const existingLedger = await LedgerAccount.findOne({ where: { id } });
     if (!existingLedger) {
       return res.json({
         response: {
@@ -581,7 +581,7 @@ const deleteLedger = async (data, res) => {
     }
 
     await LedgerAccount.destroy({
-      where: { _id }
+      where: { id }
     });
 
     res.json({
@@ -591,7 +591,7 @@ const deleteLedger = async (data, res) => {
           statusMessage: "Ledger deleted successfully"
         },
         data: { 
-          ledger: _id 
+          ledger: id 
         }
       }
     });
@@ -603,9 +603,9 @@ const deleteLedger = async (data, res) => {
 // 🔹 GET LEDGER HISTORY (Integration with Sales/Purchases) - FIXED VERSION
 const getLedgerHistory = async (data, res) => {
   try {
-    const { _id } = data;
+    const { id } = data;
     
-    if (!_id) {
+    if (!id) {
       return res.json({
         response: {
           status: {
@@ -616,7 +616,7 @@ const getLedgerHistory = async (data, res) => {
       });
     }
 
-    const ledger = await LedgerAccount.findOne({ where: { _id } });
+    const ledger = await LedgerAccount.findOne({ where: { id } });
     if (!ledger) {
       return res.json({
         response: {
@@ -637,14 +637,14 @@ const getLedgerHistory = async (data, res) => {
       const Purchase = require('../billing/purchase.model');
       
       purchases = await Purchase.findAll({
-        where: { ledger_id: _id },
+        where: { ledger_id: id },
         order: [['date', 'DESC']]
       });
       
       // If you have sales model, uncomment this:
       // const Sale = require('./sale.model');
       // sales = await Sale.findAll({
-      //   where: { ledger_id: _id },
+      //   where: { ledger_id: id },
       //   order: [['date', 'DESC']]
       // });
       

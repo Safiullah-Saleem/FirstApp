@@ -1058,7 +1058,7 @@ const getBillsByCompany = async (req, res) => {
   }
 };
 
-// Return sale (with reversal of balances and inventory restoration)
+// Return sale (with new transaction entries and inventory restoration)
 const returnSale = async (req, res) => {
   const transaction = await sequelize.transaction();
 
@@ -1079,9 +1079,9 @@ const returnSale = async (req, res) => {
     }
 
     const sale = await Sale.findOne({
-      where: { 
+      where: {
         id: parseInt(sale_id),
-        company_code 
+        company_code
       },
       transaction
     });
@@ -1100,7 +1100,7 @@ const returnSale = async (req, res) => {
     }
 
     const qtyToReturn = return_quantity || sale.quantity;
-    
+
     // Calculate return amounts
     const unitPrice = parseFloat(sale.sale_price);
     const unitCost = parseFloat(sale.cost_price);
@@ -1128,47 +1128,56 @@ const returnSale = async (req, res) => {
       console.log(`✅ Restored ${qtyToReturn} units to item ${sale.item_id}`);
     }
 
-    // Reverse ledger, bank, and cash balances
+    // Add new transaction entries for return instead of reversing balances
     try {
-      // Reverse ledger balance
+      // Add return entry to ledger transactions
       if (sale.ledger_id) {
-        const LedgerAccount = require('../ledger/ledger.account.model');
-        const ledger = await LedgerAccount.findOne({ where: { _id: sale.ledger_id } });
-        if (ledger) {
-          await LedgerAccount.update({
-            saleTotal: parseFloat(ledger.saleTotal || 0) - returnAmount,
-            depositedSalesTotal: parseFloat(ledger.depositedSalesTotal || 0) - returnAmount,
-            currentBalance: parseFloat(ledger.currentBalance || 0) - returnAmount,
-            modified_at: Math.floor(Date.now() / 1000)
-          }, { where: { _id: sale.ledger_id }, transaction });
-          console.log(`✅ Reversed ledger ${sale.ledger_id} balance`);
-        }
+        const LedgerTransaction = require('../ledger/ledger.transaction.model');
+        await LedgerTransaction.create({
+          ledger_id: sale.ledger_id,
+          company_code: sale.company_code,
+          transaction_type: 'return',
+          sale_id: sale.id,
+          amount: returnAmount,
+          paid_amount: returnAmount,
+          balance_change: -returnAmount, // Negative for return
+          description: `Return sale for item: ${sale.name}`,
+          date: new Date().toISOString().split("T")[0],
+          created_at: Math.floor(Date.now() / 1000)
+        }, { transaction });
+        console.log(`✅ New ledger return transaction entry added`);
       }
-      
-      // Reverse bank balance
+
+      // Add return entry to bank transactions
       if (sale.bank_id) {
-        const BankAccount = require('../bank/bank.account.model');
-        const bank = await BankAccount.findOne({ where: { _id: sale.bank_id } });
-        if (bank) {
-          await BankAccount.update({
-            balance: parseFloat(bank.balance || 0) - returnAmount,
-            modified_at: Math.floor(Date.now() / 1000)
-          }, { where: { _id: sale.bank_id }, transaction });
-          console.log(`✅ Reversed bank ${sale.bank_id} balance`);
-        }
+        const BankTransaction = require('../bank/bank.transaction.model');
+        await BankTransaction.create({
+          bank_id: sale.bank_id,
+          company_code: sale.company_code,
+          transaction_type: 'return',
+          sale_id: sale.id,
+          amount: returnAmount,
+          description: `Return sale payment for item: ${sale.name}`,
+          date: new Date().toISOString().split("T")[0],
+          created_at: Math.floor(Date.now() / 1000)
+        }, { transaction });
+        console.log(`✅ New bank return transaction entry added`);
       }
-      
-      // Reverse cash balance
+
+      // Add return entry to cash transactions
       if (sale.cash_id) {
-        const CashAccount = require('../cash/cash.account.model');
-        const cash = await CashAccount.findOne({ where: { _id: sale.cash_id } });
-        if (cash) {
-          await CashAccount.update({
-            balance: parseFloat(cash.balance || 0) - returnAmount,
-            modified_at: Math.floor(Date.now() / 1000)
-          }, { where: { _id: sale.cash_id }, transaction });
-          console.log(`✅ Reversed cash ${sale.cash_id} balance`);
-        }
+        const CashTransaction = require('../cash/cash.transaction.model');
+        await CashTransaction.create({
+          cash_id: sale.cash_id,
+          company_code: sale.company_code,
+          transaction_type: 'return',
+          sale_id: sale.id,
+          amount: returnAmount,
+          description: `Return sale payment for item: ${sale.name}`,
+          date: new Date().toISOString().split("T")[0],
+          created_at: Math.floor(Date.now() / 1000)
+        }, { transaction });
+        console.log(`✅ New cash return transaction entry added`);
       }
     } catch (integrationError) {
       console.log('Integration modules not available:', integrationError.message);
@@ -1186,14 +1195,14 @@ const returnSale = async (req, res) => {
           sale_id: sale.id,
           return_amount: returnAmount,
           return_quantity: qtyToReturn,
-          message: "Sale returned successfully. Inventory restored and balances reversed.",
+          message: "Sale returned successfully. Inventory restored and return entries added.",
         },
       },
     });
   } catch (error) {
     await transaction.rollback();
     console.error("RETURN SALE ERROR:", error);
-    
+
     res.status(500).json({
       response: {
         status: {

@@ -1,4 +1,4 @@
-const { DataTypes } = require("sequelize");
+const { DataTypes, Op } = require("sequelize");
 const { sequelize } = require("../config/database");
 
 const Purchase = sequelize.define(
@@ -301,14 +301,14 @@ const Purchase = sequelize.define(
           // If ledger_id provided, update ledger
           if (purchase.ledger_id) {
             const LedgerAccount = require('../../ledger/ledger.account.model');
-            const ledger = await LedgerAccount.findOne({ where: { _id: purchase.ledger_id } });
+            const ledger = await LedgerAccount.findOne({ where: { id: purchase.ledger_id } });
             if (ledger) {
               await LedgerAccount.update({
                 purchasesTotal: parseFloat(ledger.purchasesTotal || 0) + parseFloat(purchase.total_price || 0),
                 depositedPurchasesTotal: parseFloat(ledger.depositedPurchasesTotal || 0) + parseFloat(purchase.paid || 0),
                 currentBalance: parseFloat(ledger.currentBalance || 0) - (parseFloat(purchase.total_price || 0) - parseFloat(purchase.paid || 0)),
                 modified_at: Math.floor(Date.now() / 1000)
-              }, { where: { _id: purchase.ledger_id } });
+              }, { where: { id: purchase.ledger_id } });
               console.log(`✅ Ledger ${purchase.ledger_id} updated with purchase`);
             }
           }
@@ -316,12 +316,12 @@ const Purchase = sequelize.define(
           // If bank_id provided, update bank balance
           if (purchase.bank_id) {
             const BankAccount = require('../../bank/bank.account.model');
-            const bank = await BankAccount.findOne({ where: { _id: purchase.bank_id } });
+            const bank = await BankAccount.findOne({ where: { id: purchase.bank_id } });
             if (bank) {
               await BankAccount.update({
                 balance: parseFloat(bank.balance || 0) - parseFloat(purchase.paid || 0),
                 modified_at: Math.floor(Date.now() / 1000)
-              }, { where: { _id: purchase.bank_id } });
+              }, { where: { id: purchase.bank_id } });
               console.log(`✅ Bank ${purchase.bank_id} balance updated`);
             }
           }
@@ -329,12 +329,12 @@ const Purchase = sequelize.define(
           // If cash_id provided, update cash balance
           if (purchase.cash_id) {
             const CashAccount = require('../../cash/cash.account.model');
-            const cash = await CashAccount.findOne({ where: { _id: purchase.cash_id } });
+            const cash = await CashAccount.findOne({ where: { id: purchase.cash_id } });
             if (cash) {
               await CashAccount.update({
                 balance: parseFloat(cash.balance || 0) - parseFloat(purchase.paid || 0),
                 modified_at: Math.floor(Date.now() / 1000)
-              }, { where: { _id: purchase.cash_id } });
+              }, { where: { id: purchase.cash_id } });
               console.log(`✅ Cash ${purchase.cash_id} balance updated`);
             }
           }

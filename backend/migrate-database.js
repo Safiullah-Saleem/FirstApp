@@ -11,7 +11,18 @@
 
 require('dotenv').config();
 const Purchase = require('./src/billing/purchase.model');
-const { sequelize, testConnection, getConnectionHealth } = require('./src/config/database');
+const Sale = require('./src/billing/sale.model');
+const Bill = require('./src/billing/bill.model');
+const Item = require('./src/items/item.model');
+const User = require('./src/user/user.model');
+const Employee = require('./src/employees/employee.model');
+const BankAccount = require('./src/bank/bank.account.model');
+const BankTransaction = require('./src/bank/bank.transaction.model');
+const CashAccount = require('./src/cash/cash.account.model');
+const CashTransaction = require('./src/cash/cash.transaction.model');
+const LedgerAccount = require('./src/ledger/ledger.account.model');
+const LedgerTransaction = require('./src/ledger/ledger.transaction.model');
+const { sequelize, testConnection, getConnectionHealth, connectWithRetry } = require('./src/config/database');
 
 // Enhanced migration function with Railway-specific error handling
 async function migrateWithModel() {
@@ -26,46 +37,74 @@ async function migrateWithModel() {
     console.log(`🏠 Database Host: ${process.env.DB_HOST || 'Not set'}`);
     console.log('');
 
-    // Step 1: Test database connection with comprehensive checks
-    console.log("🔍 Step 1: Testing database connection...");
-    await testConnection();
+    // Step 1: Test database connection with comprehensive checks and retry logic
+    console.log("🔍 Step 1: Testing database connection with Railway retry logic...");
+    await connectWithRetry(async () => {
+      await sequelize.authenticate();
+      console.log("✅ PostgreSQL connection established successfully.");
+    }, 10, 3000); // 10 retries with 3s base delay for Railway free tier
     console.log("✅ Database connection verified");
     console.log('');
 
-    // Step 2: Check connection health
-    console.log("💚 Step 2: Checking connection health...");
-    const health = await getConnectionHealth();
-    if (health.status !== 'healthy') {
-      throw new Error(`Database health check failed: ${health.error}`);
-    }
+    // Step 2: Check connection health with retry logic
+    console.log("💚 Step 2: Checking connection health with retry logic...");
+    const health = await connectWithRetry(async () => {
+      const healthCheck = await getConnectionHealth();
+      if (healthCheck.status !== 'healthy') {
+        throw new Error(`Database health check failed: ${healthCheck.error}`);
+      }
+      return healthCheck;
+    }, 5, 2000); // 5 retries with 2s base delay
+    
     console.log("✅ Database health check passed");
     console.log(`📊 Pool status: ${health.pool.size}/${health.pool.max} connections`);
     console.log('');
 
-    // Step 3: Sync Purchase model with enhanced error handling
-    console.log("🔄 Step 3: Syncing Purchase model...");
-    try {
-      await Purchase.sync({ 
-        force: false, // Never force in production
-        alter: process.env.NODE_ENV !== 'production' // Only alter in development
-      });
-      console.log("✅ Purchase table synced successfully");
-    } catch (syncError) {
-      console.error("❌ Table sync failed:", syncError.message);
-      
-      // Railway-specific error handling
-      if (syncError.message.includes('SSL')) {
-        throw new Error("SSL connection error - check Railway SSL configuration");
+    // Step 3: Sync all models with enhanced error handling and retry logic
+    console.log("🔄 Step 3: Syncing all models with Railway retry logic...");
+    // Order models to ensure dependencies are created first
+    const models = [
+      User,           // Base user model
+      Employee,       // Depends on User
+      Item,           // Independent
+      BankAccount,    // Independent
+      CashAccount,    // Independent  
+      LedgerAccount,  // Independent
+      Bill,           // Depends on User, Item
+      Sale,           // Depends on User, Item
+      Purchase,       // Depends on User, Item
+      BankTransaction, // Depends on BankAccount, User, Sale
+      CashTransaction, // Depends on CashAccount, User
+      LedgerTransaction // Depends on LedgerAccount, User
+    ];
+
+    // Sync all models in a single retry operation to avoid connection conflicts
+    await connectWithRetry(async () => {
+      for (const model of models) {
+        try {
+          await model.sync({
+            force: false, // Never force in production
+            alter: true // Allow alter to fix schema issues
+          });
+          console.log(`✅ ${model.name} table synced successfully`);
+        } catch (syncError) {
+          console.error(`❌ ${model.name} table sync failed:`, syncError.message);
+
+          // Railway-specific error handling
+          if (syncError.message.includes('SSL')) {
+            throw new Error("SSL connection error - check Railway SSL configuration");
+          }
+          if (syncError.message.includes('timeout') || syncError.message.includes('ETIMEDOUT')) {
+            throw new Error("Connection timeout - Railway database may be sleeping (free tier)");
+          }
+          if (syncError.message.includes('permission')) {
+            throw new Error("Permission denied - check database user permissions");
+          }
+
+          throw syncError;
+        }
       }
-      if (syncError.message.includes('timeout')) {
-        throw new Error("Connection timeout - check Railway database status");
-      }
-      if (syncError.message.includes('permission')) {
-        throw new Error("Permission denied - check database user permissions");
-      }
-      
-      throw syncError;
-    }
+    }, 5, 2000); // 5 retries with 2s base delay for all models
     console.log('');
 
     // Step 4: Check existing data and insert sample data if needed
@@ -73,14 +112,16 @@ async function migrateWithModel() {
     let existingPurchases = 0;
     
     try {
-      existingPurchases = await Purchase.count({
-        where: { 
-          ledger_id: '92abf1fd-b16a-4661-8791-5814fc29b11e' 
-        }
-      });
+      existingPurchases = await connectWithRetry(async () => {
+        return await Purchase.count({
+          where: { 
+            ledger_id: '92abf1fd-b16a-4661-8791-5814fc29b11e' 
+          }
+        });
+      }, 5, 2000); // 5 retries with 2s base delay
       console.log(`📈 Found ${existingPurchases} existing purchases for ledger`);
     } catch (countError) {
-      console.error("❌ Error counting existing purchases:", countError.message);
+      console.error("❌ Error counting existing purchases after retries:", countError.message);
       throw new Error(`Failed to count existing data: ${countError.message}`);
     }
     console.log('');
@@ -134,22 +175,24 @@ async function migrateWithModel() {
       ];
       
       try {
-        // Insert with progress tracking
+        // Insert all sample data in a single retry operation to avoid connection conflicts
         let insertedCount = 0;
         const totalCount = sampleData.length;
         
         console.log(`   Inserting ${totalCount} sample records...`);
         
-        for (const data of sampleData) {
-          try {
-            await Purchase.create(data);
-            insertedCount++;
-            console.log(`   ✅ [${insertedCount}/${totalCount}] ${data.name}`);
-          } catch (itemError) {
-            console.error(`   ❌ Failed to insert: ${data.name}`, itemError.message);
-            // Continue with other records even if one fails
+        await connectWithRetry(async () => {
+          for (const data of sampleData) {
+            try {
+              await Purchase.create(data);
+              insertedCount++;
+              console.log(`   ✅ [${insertedCount}/${totalCount}] ${data.name}`);
+            } catch (itemError) {
+              console.error(`   ❌ Failed to insert: ${data.name}`, itemError.message);
+              // Continue with other records even if one fails
+            }
           }
-        }
+        }, 3, 1000); // 3 retries with 1s base delay for all records
         
         console.log(`✅ ${insertedCount}/${totalCount} sample records inserted successfully`);
         
@@ -161,8 +204,8 @@ async function migrateWithModel() {
           console.log("ℹ️  Data already exists, skipping insertion");
         } else if (insertError.message.includes('constraint')) {
           throw new Error("Database constraint violation - check data format");
-        } else if (insertError.message.includes('timeout')) {
-          throw new Error("Insert operation timed out - check Railway database performance");
+        } else if (insertError.message.includes('timeout') || insertError.message.includes('ETIMEDOUT')) {
+          throw new Error("Insert operation timed out - Railway database may be sleeping (free tier)");
         } else {
           throw insertError;
         }
@@ -173,37 +216,42 @@ async function migrateWithModel() {
     }
     console.log('');
 
-    // Step 6: Final verification
-    console.log("🔍 Step 6: Final verification...");
+    // Step 6: Final verification with retry logic
+    console.log("🔍 Step 6: Final verification with Railway retry logic...");
     try {
-      const finalCount = await Purchase.count();
-      console.log(`📊 Total purchases in database: ${finalCount}`);
-      
-      // Test a simple query to ensure everything works
-      const testQuery = await Purchase.findOne({
-        where: { company_code: '2370' },
-        attributes: ['id', 'name', 'total_price', 'created_at'],
-        order: [['created_at', 'DESC']]
-      });
-      
-      if (testQuery) {
-        console.log(`✅ Test query successful: Found purchase "${testQuery.name}" ($${testQuery.total_price})`);
-      } else {
-        console.log("⚠️  No test data found, but migration completed");
-      }
+      // Perform all verification queries in a single retry operation
+      const verificationResults = await connectWithRetry(async () => {
+        const finalCount = await Purchase.count();
+        console.log(`📊 Total purchases in database: ${finalCount}`);
+        
+        // Test a simple query to ensure everything works
+        const testQuery = await Purchase.findOne({
+          where: { company_code: '2370' },
+          attributes: ['id', 'name', 'total_price', 'created_at'],
+          order: [['created_at', 'DESC']]
+        });
+        
+        if (testQuery) {
+          console.log(`✅ Test query successful: Found purchase "${testQuery.name}" ($${testQuery.total_price})`);
+        } else {
+          console.log("⚠️  No test data found, but migration completed");
+        }
 
-      // Verify sample data structure
-      const sampleCheck = await Purchase.findOne({
-        where: { ledger_id: '92abf1fd-b16a-4661-8791-5814fc29b11e' },
-        attributes: ['id', 'name', 'total_price', 'paid', 'date']
-      });
-      
-      if (sampleCheck) {
-        console.log(`✅ Sample data verified: "${sampleCheck.name}" from ${sampleCheck.date}`);
-      }
+        // Verify sample data structure
+        const sampleCheck = await Purchase.findOne({
+          where: { ledger_id: '92abf1fd-b16a-4661-8791-5814fc29b11e' },
+          attributes: ['id', 'name', 'total_price', 'paid', 'date']
+        });
+        
+        if (sampleCheck) {
+          console.log(`✅ Sample data verified: "${sampleCheck.name}" from ${sampleCheck.date}`);
+        }
+        
+        return { finalCount, testQuery, sampleCheck };
+      }, 5, 2000); // 5 retries with 2s base delay
       
     } catch (verifyError) {
-      console.error("❌ Final verification failed:", verifyError.message);
+      console.error("❌ Final verification failed after retries:", verifyError.message);
       throw new Error(`Migration verification failed: ${verifyError.message}`);
     }
 
@@ -239,13 +287,14 @@ async function migrateWithModel() {
       console.error("  - Try adding ?ssl=require to DATABASE_URL");
     }
     
-    if (error.message.includes('timeout')) {
+    if (error.message.includes('timeout') || error.message.includes('ETIMEDOUT')) {
       console.error('');
       console.error("⏱️  Timeout Error Diagnostics:");
-      console.error("  - Check Railway database status");
+      console.error("  - Railway database may be sleeping (free tier limitation)");
+      console.error("  - Wait 30-60 seconds and try again");
+      console.error("  - Check Railway dashboard for database service status");
       console.error("  - Verify connection pool settings");
-      console.error("  - Check Railway service limits");
-      console.error("  - Database might be sleeping (Railway free tier)");
+      console.error("  - Consider upgrading Railway plan if hitting limits");
     }
     
     if (error.message.includes('ENOTFOUND') || error.message.includes('ECONNREFUSED')) {

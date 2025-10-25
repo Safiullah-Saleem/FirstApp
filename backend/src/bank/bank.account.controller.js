@@ -69,9 +69,9 @@ const getBanksByCompany = async (data, res) => {
 // 🔹 GET SINGLE BANK BY ID
 const getBankById = async (data, res) => {
   try {
-    const { _id } = data;
+    const { id } = data;
     
-    if (!_id) {
+    if (!id) {
       return res.json({
         response: {
           status: {
@@ -83,7 +83,7 @@ const getBankById = async (data, res) => {
     }
 
     const bank = await BankAccount.findOne({
-      where: { _id }
+      where: { id }
     });
 
     if (!bank) {
@@ -146,7 +146,7 @@ const saveBank = async (data, res) => {
           statusMessage: "Bank created successfully"
         },
         data: { 
-          bank: bank._id 
+          bank: bank.id 
         }
       }
     });
@@ -158,9 +158,9 @@ const saveBank = async (data, res) => {
 // 🔹 UPDATE BANK
 const updateBank = async (data, res) => {
   try {
-    const { _id, ...updateData } = data;
+    const { id, ...updateData } = data;
     
-    if (!_id) {
+    if (!id) {
       return res.json({
         response: {
           status: {
@@ -171,7 +171,7 @@ const updateBank = async (data, res) => {
       });
     }
 
-    const existingBank = await BankAccount.findOne({ where: { _id } });
+    const existingBank = await BankAccount.findOne({ where: { id } });
     if (!existingBank) {
       return res.json({
         response: {
@@ -191,7 +191,7 @@ const updateBank = async (data, res) => {
     updateData.modified_at = Math.floor(Date.now() / 1000);
 
     await BankAccount.update(updateData, {
-      where: { _id }
+      where: { id }
     });
 
     res.json({
@@ -201,7 +201,7 @@ const updateBank = async (data, res) => {
           statusMessage: "Bank updated successfully"
         },
         data: { 
-          bank: _id 
+          bank: id 
         }
       }
     });
@@ -213,9 +213,9 @@ const updateBank = async (data, res) => {
 // 🔹 DELETE BANK
 const deleteBank = async (data, res) => {
   try {
-    const { _id } = data;
+    const { id } = data;
     
-    if (!_id) {
+    if (!id) {
       return res.json({
         response: {
           status: {
@@ -226,7 +226,7 @@ const deleteBank = async (data, res) => {
       });
     }
 
-    const existingBank = await BankAccount.findOne({ where: { _id } });
+    const existingBank = await BankAccount.findOne({ where: { id } });
     if (!existingBank) {
       return res.json({
         response: {
@@ -239,7 +239,7 @@ const deleteBank = async (data, res) => {
     }
 
     await BankAccount.destroy({
-      where: { _id }
+      where: { id }
     });
 
     res.json({
@@ -249,7 +249,7 @@ const deleteBank = async (data, res) => {
           statusMessage: "Bank deleted successfully"
         },
         data: { 
-          bank: _id 
+          bank: id 
         }
       }
     });
@@ -261,9 +261,9 @@ const deleteBank = async (data, res) => {
 // 🔹 GET BANK HISTORY (Integration with Sales/Purchases)
 const getBankHistory = async (data, res) => {
   try {
-    const { _id } = data;
+    const { id } = data;
     
-    if (!_id) {
+    if (!id) {
       return res.json({
         response: {
           status: {
@@ -274,7 +274,7 @@ const getBankHistory = async (data, res) => {
       });
     }
 
-    const bank = await BankAccount.findOne({ where: { _id } });
+    const bank = await BankAccount.findOne({ where: { id } });
     if (!bank) {
       return res.json({
         response: {
@@ -295,12 +295,12 @@ const getBankHistory = async (data, res) => {
       const Purchase = require('../billing/purchase.model.js');
       
       sales = await Sale.findAll({
-        where: { bank_id: _id },
+        where: { bank_id: id },
         order: [['date', 'DESC']]
       });
       
       purchases = await Purchase.findAll({
-        where: { bank_id: _id },
+        where: { bank_id: id },
         order: [['date', 'DESC']]
       });
     } catch (importError) {

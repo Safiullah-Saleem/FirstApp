@@ -1,4 +1,4 @@
-const { DataTypes } = require("sequelize");
+const { DataTypes, Op } = require("sequelize");
 const { sequelize } = require("../config/database");
 
 const Bill = sequelize.define(
@@ -231,6 +231,27 @@ Bill.findByCompanyAndDateRange = function(companyCode, startDate, endDate) {
       }
     },
     order: [['date', 'DESC']]
+  });
+};
+
+// ===== ASSOCIATIONS =====
+Bill.associate = function(models) {
+  Bill.hasMany(models.Sale, {
+    foreignKey: 'bill_id',
+    as: 'sales',
+    onDelete: 'CASCADE'
+  });
+
+  Bill.hasMany(models.Purchase, {
+    foreignKey: 'bill_id',
+    as: 'purchases',
+    onDelete: 'CASCADE'
+  });
+
+  Bill.belongsTo(models.User, {
+    foreignKey: 'company_code',
+    targetKey: 'company_code',
+    as: 'company'
   });
 };
 

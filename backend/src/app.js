@@ -64,17 +64,23 @@ const initializeDatabaseAsync = async () => {
   let retryCount = 0;
   const maxRetries = 3;
   const retryDelay = 2000; // 2 seconds
-  
+
   while (retryCount < maxRetries) {
     try {
       console.log(`🔄 Database connection attempt ${retryCount + 1}/${maxRetries}...`);
       await testConnection();
       console.log("✅ Database connection established successfully");
+
+      // Load and associate models after database connection
+      console.log("🔄 Loading models and setting up associations...");
+      require('./models/index.js');
+      console.log("✅ Models loaded and associations set up successfully");
+
       return;
     } catch (error) {
       retryCount++;
       console.error(`❌ Database connection attempt ${retryCount} failed:`, error.message);
-      
+
       if (retryCount < maxRetries) {
         console.log(`⏳ Retrying in ${retryDelay}ms...`);
         await new Promise(resolve => setTimeout(resolve, retryDelay));
