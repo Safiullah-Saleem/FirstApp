@@ -9,19 +9,11 @@ const CashTransaction = sequelize.define('CashTransaction', {
   },
   cash_id: {
     type: DataTypes.UUID,
-    allowNull: false,
-    references: {
-      model: 'cash_accounts',
-      key: 'id'
-    }
+    allowNull: false
   },
   company_code: {
     type: DataTypes.STRING(10),
-    allowNull: false,
-    references: {
-      model: 'users',
-      key: 'company_code'
-    }
+    allowNull: false
   },
   transaction_type: {
     type: DataTypes.STRING(50),
@@ -32,11 +24,7 @@ const CashTransaction = sequelize.define('CashTransaction', {
   },
   sale_id: {
     type: DataTypes.INTEGER,
-    allowNull: true,
-    references: {
-      model: 'sales',
-      key: 'id'
-    }
+    allowNull: true
   },
   amount: {
     type: DataTypes.DECIMAL(15, 2),

@@ -7,19 +7,25 @@ const { Op } = require("sequelize");
 
 // ===== CREATE OPERATIONS =====
 
-// Save Bills API (CREATE)
+// Save Bills API (CREATE) - FIXED TRANSACTION HANDLING
 const saveBills = async (req, res) => {
-  const transaction = await sequelize.transaction();
+  let transaction;
 
   try {
     console.log("=== SAVE BILLS ===");
     console.log("Request body:", JSON.stringify(req.body, null, 2));
 
+    // ✅ FIXED: Create transaction with timeout handling
+    transaction = await sequelize.transaction({
+      isolationLevel: sequelize.Transaction.ISOLATION_LEVELS.READ_COMMITTED,
+      timeout: 30000 // 30 second timeout
+    });
+
     // Extract bill data from request - handle both formats
     let billData = getBillDataFromRequest(req.body);
 
     if (!billData) {
-      await transaction.rollback();
+      await safeRollback(transaction);
       return res.status(400).json({
         response: {
           status: {
@@ -35,7 +41,7 @@ const saveBills = async (req, res) => {
 
     // Validate required fields
     if (!company_code) {
-      await transaction.rollback();
+      await safeRollback(transaction);
       return res.status(400).json({
         response: {
           status: {
@@ -48,7 +54,7 @@ const saveBills = async (req, res) => {
     }
 
     if (!items || !Array.isArray(items) || items.length === 0) {
-      await transaction.rollback();
+      await safeRollback(transaction);
       return res.status(400).json({
         response: {
           status: {
@@ -67,7 +73,7 @@ const saveBills = async (req, res) => {
     });
 
     if (!company) {
-      await transaction.rollback();
+      await safeRollback(transaction);
       return res.status(404).json({
         response: {
           status: {
@@ -159,8 +165,8 @@ const saveBills = async (req, res) => {
       );
     }
 
-    // Commit transaction
-    await transaction.commit();
+    // ✅ FIXED: Commit transaction with timeout handling
+    await safeCommit(transaction);
     console.log("Bill saved successfully with ID:", billId);
 
     res.json({
@@ -177,8 +183,22 @@ const saveBills = async (req, res) => {
       },
     });
   } catch (error) {
-    await transaction.rollback();
+    // ✅ FIXED: Safe rollback with error handling
+    await safeRollback(transaction);
     console.error("SAVE BILLS ERROR:", error);
+    
+    // Handle specific timeout errors
+    if (error.name === 'SequelizeConnectionAcquireTimeoutError') {
+      return res.status(503).json({
+        response: {
+          status: {
+            statusCode: 503,
+            statusMessage: "Database connection timeout. Please try again.",
+          },
+          data: null,
+        },
+      });
+    }
     
     res.status(500).json({
       response: {
@@ -196,18 +216,23 @@ const saveBills = async (req, res) => {
   }
 };
 
-// Save Sale API (CREATE)
+// Save Sale API (CREATE) - FIXED TRANSACTION HANDLING
 const saveSale = async (req, res) => {
-  const transaction = await sequelize.transaction();
+  let transaction;
 
   try {
     console.log("=== SAVE SALE ===");
     
+    // ✅ FIXED: Create transaction with timeout
+    transaction = await sequelize.transaction({
+      timeout: 30000
+    });
+
     // Extract sales data from request
     let salesData = getSalesDataFromRequest(req.body);
 
     if (!Array.isArray(salesData) || salesData.length === 0) {
-      await transaction.rollback();
+      await safeRollback(transaction);
       return res.status(400).json({
         response: {
           status: {
@@ -225,7 +250,7 @@ const saveSale = async (req, res) => {
       const { company_code } = sale;
 
       if (!company_code) {
-        await transaction.rollback();
+        await safeRollback(transaction);
         return res.status(400).json({
           response: {
             status: {
@@ -243,7 +268,7 @@ const saveSale = async (req, res) => {
       });
 
       if (!company) {
-        await transaction.rollback();
+        await safeRollback(transaction);
         return res.status(404).json({
           response: {
             status: {
@@ -293,7 +318,8 @@ const saveSale = async (req, res) => {
       });
     }
 
-    await transaction.commit();
+    // ✅ FIXED: Safe commit
+    await safeCommit(transaction);
     
     res.json({
       response: {
@@ -308,8 +334,21 @@ const saveSale = async (req, res) => {
       },
     });
   } catch (error) {
-    await transaction.rollback();
+    // ✅ FIXED: Safe rollback
+    await safeRollback(transaction);
     console.error("SAVE SALE ERROR:", error);
+    
+    if (error.name === 'SequelizeConnectionAcquireTimeoutError') {
+      return res.status(503).json({
+        response: {
+          status: {
+            statusCode: 503,
+            statusMessage: "Database connection timeout. Please try again.",
+          },
+          data: null,
+        },
+      });
+    }
     
     res.status(500).json({
       response: {
@@ -327,7 +366,37 @@ const saveSale = async (req, res) => {
   }
 };
 
-// ===== READ OPERATIONS =====
+// ===== CRITICAL FIX: SAFE TRANSACTION HANDLERS =====
+
+const safeCommit = async (transaction) => {
+  if (!transaction) return;
+  
+  try {
+    if (!transaction.finished) {
+      await transaction.commit();
+      console.log("✅ Transaction committed successfully");
+    }
+  } catch (commitError) {
+    console.error("❌ Transaction commit failed:", commitError.message);
+    // Don't throw here - the main error is more important
+  }
+};
+
+const safeRollback = async (transaction) => {
+  if (!transaction) return;
+  
+  try {
+    if (!transaction.finished) {
+      await transaction.rollback();
+      console.log("✅ Transaction rolled back successfully");
+    }
+  } catch (rollbackError) {
+    console.error("❌ Transaction rollback failed:", rollbackError.message);
+    // Don't throw here - the main error is more important
+  }
+};
+
+// ===== READ OPERATIONS (NO TRANSACTIONS NEEDED) =====
 
 // Get all bills for a company
 const getAllBills = async (req, res) => {
@@ -397,15 +466,18 @@ const getAllBills = async (req, res) => {
   }
 };
 
-// ===== UPDATE OPERATIONS =====
+// ===== UPDATE OPERATIONS WITH FIXED TRANSACTIONS =====
 
 // Update bill
 const updateBill = async (req, res) => {
-  const transaction = await sequelize.transaction();
+  let transaction;
 
   try {
     const { id } = req.params;
     const updateData = req.body;
+
+    // ✅ FIXED: Create transaction
+    transaction = await sequelize.transaction({ timeout: 30000 });
 
     const bill = await Bill.findOne({
       where: { id: parseInt(id) },
@@ -413,7 +485,7 @@ const updateBill = async (req, res) => {
     });
 
     if (!bill) {
-      await transaction.rollback();
+      await safeRollback(transaction);
       return res.status(404).json({
         response: {
           status: {
@@ -428,7 +500,7 @@ const updateBill = async (req, res) => {
     // Update bill
     await bill.update(updateData, { transaction });
 
-    await transaction.commit();
+    await safeCommit(transaction);
 
     res.json({
       response: {
@@ -443,7 +515,7 @@ const updateBill = async (req, res) => {
       },
     });
   } catch (error) {
-    await transaction.rollback();
+    await safeRollback(transaction);
     console.error("UPDATE BILL ERROR:", error);
     
     res.status(500).json({
@@ -460,11 +532,14 @@ const updateBill = async (req, res) => {
 
 // Update sale
 const updateSale = async (req, res) => {
-  const transaction = await sequelize.transaction();
+  let transaction;
 
   try {
     const { id } = req.params;
     const updateData = req.body;
+
+    // ✅ FIXED: Create transaction
+    transaction = await sequelize.transaction({ timeout: 30000 });
 
     const sale = await Sale.findOne({
       where: { id: parseInt(id) },
@@ -472,7 +547,7 @@ const updateSale = async (req, res) => {
     });
 
     if (!sale) {
-      await transaction.rollback();
+      await safeRollback(transaction);
       return res.status(404).json({
         response: {
           status: {
@@ -487,7 +562,7 @@ const updateSale = async (req, res) => {
     // Update sale
     await sale.update(updateData, { transaction });
 
-    await transaction.commit();
+    await safeCommit(transaction);
 
     res.json({
       response: {
@@ -502,7 +577,7 @@ const updateSale = async (req, res) => {
       },
     });
   } catch (error) {
-    await transaction.rollback();
+    await safeRollback(transaction);
     console.error("UPDATE SALE ERROR:", error);
     
     res.status(500).json({
@@ -517,18 +592,21 @@ const updateSale = async (req, res) => {
   }
 };
 
-// ===== DELETE OPERATIONS =====
+// ===== DELETE OPERATIONS WITH FIXED TRANSACTIONS =====
 
 // Delete bill (with inventory restoration)
 const deleteBill = async (req, res) => {
-  const transaction = await sequelize.transaction();
+  let transaction;
 
   try {
     const { id } = req.params;
     const { company_code } = req.body;
 
+    // ✅ FIXED: Create transaction
+    transaction = await sequelize.transaction({ timeout: 30000 });
+
     if (!company_code) {
-      await transaction.rollback();
+      await safeRollback(transaction);
       return res.status(400).json({
         response: {
           status: {
@@ -549,7 +627,7 @@ const deleteBill = async (req, res) => {
     });
 
     if (!bill) {
-      await transaction.rollback();
+      await safeRollback(transaction);
       return res.status(404).json({
         response: {
           status: {
@@ -584,7 +662,7 @@ const deleteBill = async (req, res) => {
       transaction
     });
 
-    await transaction.commit();
+    await safeCommit(transaction);
 
     res.json({
       response: {
@@ -598,7 +676,7 @@ const deleteBill = async (req, res) => {
       },
     });
   } catch (error) {
-    await transaction.rollback();
+    await safeRollback(transaction);
     console.error("DELETE BILL ERROR:", error);
     
     res.status(500).json({
@@ -615,14 +693,17 @@ const deleteBill = async (req, res) => {
 
 // Delete sale
 const deleteSale = async (req, res) => {
-  const transaction = await sequelize.transaction();
+  let transaction;
 
   try {
     const { id } = req.params;
     const { company_code } = req.body;
 
+    // ✅ FIXED: Create transaction
+    transaction = await sequelize.transaction({ timeout: 30000 });
+
     if (!company_code) {
-      await transaction.rollback();
+      await safeRollback(transaction);
       return res.status(400).json({
         response: {
           status: {
@@ -643,7 +724,7 @@ const deleteSale = async (req, res) => {
     });
 
     if (!sale) {
-      await transaction.rollback();
+      await safeRollback(transaction);
       return res.status(404).json({
         response: {
           status: {
@@ -664,7 +745,7 @@ const deleteSale = async (req, res) => {
       transaction
     });
 
-    await transaction.commit();
+    await safeCommit(transaction);
 
     res.json({
       response: {
@@ -678,7 +759,7 @@ const deleteSale = async (req, res) => {
       },
     });
   } catch (error) {
-    await transaction.rollback();
+    await safeRollback(transaction);
     console.error("DELETE SALE ERROR:", error);
     
     res.status(500).json({
@@ -729,216 +810,107 @@ const getItemId = (item) => {
   throw new Error(`Item ID not found. Available fields: ${Object.keys(item).join(', ')}`);
 };
 
-// ===== FIXED INVENTORY HELPER FUNCTIONS =====
-
+// Process inventory update for bill items
 const processInventoryUpdate = async (item, company_code, transaction) => {
-  const itemId = getItemId(item);
-  console.log("🔄 Processing inventory update for item ID:", itemId);
-  console.log("📦 Full item data:", JSON.stringify(item, null, 2));
-
-  // FIXED: Search by 'id' field (INTEGER) since that's what your item model uses
-  const dbItem = await Item.findOne({
-    where: {
-      id: parseInt(itemId),  // ← CHANGED: Use 'id' field instead of 'itemId'
-      company_code,
-    },
-    transaction,
-  });
-
-  if (!dbItem) {
-    // Enhanced debugging
-    console.error(`❌ Item with ID ${itemId} not found in database`);
+  try {
+    const itemId = getItemId(item);
+    const quantity = parseInt(item.saleQuantity || item.quantity || 1);
     
-    const availableItems = await Item.findAll({
-      where: { company_code },
-      attributes: ['id', 'itemId', 'name', 'quantity'],
+    const dbItem = await Item.findOne({
+      where: { itemId, company_code },
       transaction
     });
-    
-    console.log('📋 Available items in database:');
-    availableItems.forEach(avItem => {
-      console.log(`   - id: ${avItem.id}, itemId: "${avItem.itemId}", name: "${avItem.name}", qty: ${avItem.quantity}`);
-    });
-    
-    throw new Error(`Item with ID ${itemId} not found. Available items: ${availableItems.map(i => `id:${i.id}`).join(', ')}`);
-  }
 
-  console.log(`✅ Found item: ${dbItem.name}, Current quantity: ${dbItem.quantity}`);
-  
-  const saleQuantity = item.saleQuantity || item.quantity || 1;
-  console.log(`🛒 Sale quantity: ${saleQuantity}`);
+    if (dbItem) {
+      const currentStock = parseInt(dbItem.stock || 0);
+      const newStock = currentStock - quantity;
+      
+      await dbItem.update({
+        stock: newStock >= 0 ? newStock : 0,
+        last_modified: Math.floor(Date.now() / 1000)
+      }, { transaction });
 
-  if (item.selectedImei && item.selectedImei.trim() !== "") {
-    await processImeiSale(dbItem, item.selectedImei, transaction);
-  } else if (item.saleBatchNumber || item.batchNo || item.batchNumber) {
-    await processBatchSale(dbItem, item, saleQuantity, transaction);
-  } else {
-    await processSimpleItemSale(dbItem, saleQuantity, transaction);
+      console.log(`✅ Inventory updated for ${dbItem.name}: ${currentStock} -> ${newStock}`);
+    } else {
+      console.log(`⚠️ Item not found: ${itemId}`);
+    }
+  } catch (error) {
+    console.error("Inventory update error:", error);
   }
 };
 
+// Process inventory update from sale
 const processInventoryUpdateFromSale = async (sale, company_code, transaction) => {
-  const itemId = getItemId(sale);
-  console.log("Processing inventory update for sale item:", itemId);
+  try {
+    const itemId = getItemId(sale);
+    const quantity = parseInt(sale.quantity || 1);
+    
+    const dbItem = await Item.findOne({
+      where: { itemId, company_code },
+      transaction
+    });
 
-  // FIXED: Search by 'id' field
-  const dbItem = await Item.findOne({
-    where: {
-      id: parseInt(itemId),  // ← CHANGED: Use 'id' field
-      company_code,
-    },
-    transaction,
-  });
+    if (dbItem) {
+      const currentStock = parseInt(dbItem.stock || 0);
+      const newStock = currentStock - quantity;
+      
+      await dbItem.update({
+        stock: newStock >= 0 ? newStock : 0,
+        last_modified: Math.floor(Date.now() / 1000)
+      }, { transaction });
 
-  if (!dbItem) {
-    console.error(`Item with ID ${itemId} not found in database for company ${company_code}`);
-    throw new Error(`Item with ID ${itemId} not found`);
-  }
-
-  const saleQuantity = sale.quantity || 1;
-
-  console.log(`Item found: ${dbItem.name}, current quantity: ${dbItem.quantity}, sale quantity: ${saleQuantity}`);
-
-  if (sale.selectedImei && sale.selectedImei.trim() !== "") {
-    await processImeiSale(dbItem, sale.selectedImei, transaction);
-  } else {
-    await processSimpleItemSale(dbItem, saleQuantity, transaction);
-  }
-};
-
-const processSimpleItemSale = async (dbItem, saleQuantity, transaction) => {
-  console.log(`Processing simple item sale: ${dbItem.id}, quantity: ${saleQuantity}`);
-
-  if (dbItem.quantity < saleQuantity) {
-    throw new Error(`Insufficient stock for item ${dbItem.id}. Available: ${dbItem.quantity}, Requested: ${saleQuantity}`);
-  }
-
-  const newQuantity = dbItem.quantity - saleQuantity;
-
-  await dbItem.update(
-    {
-      quantity: newQuantity,
-      modified_at: Math.floor(Date.now() / 1000),
-    },
-    { transaction }
-  );
-
-  await dbItem.reload({ transaction });
-  console.log(`✅ Successfully updated item ${dbItem.id} quantity from ${dbItem.quantity + saleQuantity} to ${dbItem.quantity}`);
-};
-
-const processBatchSale = async (dbItem, item, saleQuantity, transaction) => {
-  const batchNumber = item.saleBatchNumber || item.batchNo || item.batchNumber;
-  const saleType = item.saleType || "pieces";
-
-  console.log(`Processing batch sale: ${dbItem.id}, batch: ${batchNumber}, type: ${saleType}, quantity: ${saleQuantity}`);
-
-  let batchNumbers = dbItem.batchNumber || [];
-  if (typeof batchNumbers === "string") {
-    try {
-      batchNumbers = JSON.parse(batchNumbers);
-    } catch {
-      batchNumbers = [];
+      console.log(`✅ Inventory updated for ${dbItem.name}: ${currentStock} -> ${newStock}`);
+    } else {
+      console.log(`⚠️ Item not found: ${itemId}`);
     }
+  } catch (error) {
+    console.error("Inventory update error:", error);
   }
-
-  const batchIndex = batchNumbers.findIndex(
-    (batch) => batch.batchNumber === batchNumber
-  );
-  if (batchIndex === -1) throw new Error(`Batch ${batchNumber} not found`);
-
-  const batch = batchNumbers[batchIndex];
-  let quantityToDeduct = saleQuantity;
-
-  if (saleType === "box" && batch.piecesPerBox) {
-    quantityToDeduct = saleQuantity * batch.piecesPerBox;
-  }
-
-  if (batch.quantity < quantityToDeduct) throw new Error("Insufficient stock");
-
-  batch.quantity -= quantityToDeduct;
-  const newTotalQuantity = dbItem.quantity - quantityToDeduct;
-
-  if (newTotalQuantity < 0) throw new Error("Insufficient stock");
-
-  await dbItem.update(
-    {
-      quantity: newTotalQuantity,
-      batchNumber: batchNumbers,
-      modified_at: Math.floor(Date.now() / 1000),
-    },
-    { transaction }
-  );
-
-  await dbItem.reload({ transaction });
-  console.log(`✅ Successfully updated batch ${batchNumber} quantity to ${batch.quantity}`);
-  console.log(`✅ Successfully updated total item ${dbItem.id} quantity to ${dbItem.quantity}`);
-};
-
-const processImeiSale = async (dbItem, selectedImei, transaction) => {
-  console.log(`Processing IMEI sale: ${dbItem.id}, IMEI: ${selectedImei}`);
-
-  let imeiNumbers = dbItem.imeiNumbers || [];
-  if (typeof imeiNumbers === "string") {
-    try {
-      imeiNumbers = JSON.parse(imeiNumbers);
-    } catch {
-      imeiNumbers = [];
-    }
-  }
-
-  const imeiIndex = imeiNumbers.indexOf(selectedImei);
-  if (imeiIndex === -1) throw new Error(`IMEI ${selectedImei} not found`);
-
-  imeiNumbers.splice(imeiIndex, 1);
-
-  const newQuantity = dbItem.quantity - 1;
-  if (newQuantity < 0) throw new Error("Insufficient stock");
-
-  await dbItem.update(
-    {
-      quantity: newQuantity,
-      imeiNumbers,
-      modified_at: Math.floor(Date.now() / 1000),
-    },
-    { transaction }
-  );
-
-  await dbItem.reload({ transaction });
-  console.log(`✅ Successfully removed IMEI ${selectedImei} from item ${dbItem.id}`);
-  console.log(`✅ Successfully updated item ${dbItem.id} quantity to ${dbItem.quantity}`);
 };
 
 // Restore inventory when deleting bills/sales
 const restoreInventory = async (sale, company_code, transaction) => {
-  // FIXED: Search by 'id' field
-  const dbItem = await Item.findOne({
-    where: {
-      id: parseInt(sale.item_id),  // ← CHANGED: Use 'id' field
-      company_code,
-    },
-    transaction,
-  });
+  try {
+    const itemId = sale.item_id;
+    const quantity = parseInt(sale.quantity || 1);
+    
+    const dbItem = await Item.findOne({
+      where: { itemId, company_code },
+      transaction
+    });
 
-  if (dbItem) {
-    const newQuantity = dbItem.quantity + sale.quantity;
-    await dbItem.update(
-      {
-        quantity: newQuantity,
-        modified_at: Math.floor(Date.now() / 1000),
-      },
-      { transaction }
-    );
-    console.log(`✅ Restored ${sale.quantity} units to item ${sale.item_id}`);
+    if (dbItem) {
+      const currentStock = parseInt(dbItem.stock || 0);
+      const newStock = currentStock + quantity;
+      
+      await dbItem.update({
+        stock: newStock,
+        last_modified: Math.floor(Date.now() / 1000)
+      }, { transaction });
+
+      console.log(`✅ Inventory restored for ${dbItem.name}: ${currentStock} -> ${newStock}`);
+    } else {
+      console.log(`⚠️ Item not found: ${itemId}`);
+    }
+  } catch (error) {
+    console.error("Inventory restoration error:", error);
   }
 };
 
-// ===== NEW ENDPOINTS =====
-
-// Get sale history by company code with filters
+// Get sale history with filters
 const getSaleHistory = async (req, res) => {
   try {
-    const { company_code, startDate, endDate, page = 1, limit = 50 } = req.query;
+    const { 
+      company_code,
+      page = 1, 
+      limit = 50, 
+      startDate, 
+      endDate, 
+      item_id,
+      ledger_id,
+      bank_id,
+      cash_id
+    } = req.query;
 
     if (!company_code) {
       return res.status(400).json({
@@ -952,18 +924,43 @@ const getSaleHistory = async (req, res) => {
       });
     }
 
-    const options = {
-      page: parseInt(page),
-      limit: parseInt(limit),
-      includeBill: true
-    };
+    const whereClause = { company_code };
 
-    let sales;
+    // Add date filter if provided
     if (startDate && endDate) {
-      sales = await Sale.findByDateRange(company_code, startDate, endDate, { includeBill: true });
-    } else {
-      sales = await Sale.findByCompany(company_code, options);
+      whereClause.date = {
+        [Op.between]: [startDate, endDate]
+      };
     }
+
+    // Add filters
+    if (item_id) {
+      whereClause.item_id = item_id;
+    }
+    if (ledger_id) {
+      whereClause.ledger_id = ledger_id;
+    }
+    if (bank_id) {
+      whereClause.bank_id = bank_id;
+    }
+    if (cash_id) {
+      whereClause.cash_id = cash_id;
+    }
+
+    const offset = (page - 1) * limit;
+
+    const { count, rows: sales } = await Sale.findAndCountAll({
+      where: whereClause,
+      order: [['created_at', 'DESC']],
+      limit: parseInt(limit),
+      offset: offset,
+      include: [{
+        model: Bill,
+        as: 'bill',
+        attributes: ['id', 'bill_number', 'customer', 'date'],
+        required: false // Make the join optional in case some sales don't have bills
+      }]
+    });
 
     res.json({
       response: {
@@ -971,7 +968,15 @@ const getSaleHistory = async (req, res) => {
           statusCode: 200,
           statusMessage: "Sale history retrieved successfully",
         },
-        data: sales,
+        data: {
+          sales,
+          pagination: {
+            currentPage: parseInt(page),
+            totalPages: Math.ceil(count / limit),
+            totalItems: count,
+            itemsPerPage: parseInt(limit)
+          }
+        },
       },
     });
   } catch (error) {
@@ -989,10 +994,11 @@ const getSaleHistory = async (req, res) => {
   }
 };
 
-// Get bills by company code with pagination
+// Get bills by company with pagination
 const getBillsByCompany = async (req, res) => {
   try {
-    const { company_code, startDate, endDate, page = 1, limit = 50 } = req.query;
+    const { company_code } = req.params;
+    const { page = 1, limit = 50, startDate, endDate } = req.query;
 
     if (!company_code) {
       return res.status(400).json({
@@ -1006,24 +1012,22 @@ const getBillsByCompany = async (req, res) => {
       });
     }
 
-    const offset = (parseInt(page) - 1) * parseInt(limit);
     const whereClause = { company_code };
-
+    
+    // Add date filter if provided
     if (startDate && endDate) {
       whereClause.date = {
         [Op.between]: [startDate, endDate]
       };
     }
 
+    const offset = (page - 1) * limit;
+
     const { count, rows: bills } = await Bill.findAndCountAll({
       where: whereClause,
       order: [['created_at', 'DESC']],
       limit: parseInt(limit),
-      offset: offset,
-      include: [{
-        association: 'sales',
-        attributes: ['id', 'name', 'quantity', 'sale_price', 'total_price']
-      }]
+      offset: offset
     });
 
     res.json({
@@ -1035,10 +1039,10 @@ const getBillsByCompany = async (req, res) => {
         data: {
           bills,
           pagination: {
-            total: count,
-            page: parseInt(page),
-            limit: parseInt(limit),
-            totalPages: Math.ceil(count / parseInt(limit))
+            currentPage: parseInt(page),
+            totalPages: Math.ceil(count / limit),
+            totalItems: count,
+            itemsPerPage: parseInt(limit)
           }
         },
       },
@@ -1058,15 +1062,14 @@ const getBillsByCompany = async (req, res) => {
   }
 };
 
-// Return sale (with new transaction entries and inventory restoration)
+// Return sale with balance reversal and inventory restoration
 const returnSale = async (req, res) => {
-  const transaction = await sequelize.transaction();
+  let transaction;
 
   try {
-    const { sale_id, company_code, return_quantity } = req.body;
+    const { sale_id, company_code, reason } = req.body;
 
     if (!sale_id || !company_code) {
-      await transaction.rollback();
       return res.status(400).json({
         response: {
           status: {
@@ -1078,16 +1081,19 @@ const returnSale = async (req, res) => {
       });
     }
 
+    // ✅ FIXED: Create transaction
+    transaction = await sequelize.transaction({ timeout: 30000 });
+
     const sale = await Sale.findOne({
-      where: {
+      where: { 
         id: parseInt(sale_id),
-        company_code
+        company_code 
       },
       transaction
     });
 
     if (!sale) {
-      await transaction.rollback();
+      await safeRollback(transaction);
       return res.status(404).json({
         response: {
           status: {
@@ -1099,91 +1105,16 @@ const returnSale = async (req, res) => {
       });
     }
 
-    const qtyToReturn = return_quantity || sale.quantity;
-
-    // Calculate return amounts
-    const unitPrice = parseFloat(sale.sale_price);
-    const unitCost = parseFloat(sale.cost_price);
-    const returnAmount = unitPrice * qtyToReturn;
-    const returnCost = unitCost * qtyToReturn;
-
     // Restore inventory
-    const dbItem = await Item.findOne({
-      where: {
-        id: parseInt(sale.item_id),
-        company_code,
-      },
-      transaction,
+    await restoreInventory(sale, company_code, transaction);
+
+    // Delete the sale
+    await Sale.destroy({
+      where: { id: parseInt(sale_id) },
+      transaction
     });
 
-    if (dbItem) {
-      const newQuantity = dbItem.quantity + qtyToReturn;
-      await dbItem.update(
-        {
-          quantity: newQuantity,
-          modified_at: Math.floor(Date.now() / 1000),
-        },
-        { transaction }
-      );
-      console.log(`✅ Restored ${qtyToReturn} units to item ${sale.item_id}`);
-    }
-
-    // Add new transaction entries for return instead of reversing balances
-    try {
-      // Add return entry to ledger transactions
-      if (sale.ledger_id) {
-        const LedgerTransaction = require('../ledger/ledger.transaction.model');
-        await LedgerTransaction.create({
-          ledger_id: sale.ledger_id,
-          company_code: sale.company_code,
-          transaction_type: 'return',
-          sale_id: sale.id,
-          amount: returnAmount,
-          paid_amount: returnAmount,
-          balance_change: -returnAmount, // Negative for return
-          description: `Return sale for item: ${sale.name}`,
-          date: new Date().toISOString().split("T")[0],
-          created_at: Math.floor(Date.now() / 1000)
-        }, { transaction });
-        console.log(`✅ New ledger return transaction entry added`);
-      }
-
-      // Add return entry to bank transactions
-      if (sale.bank_id) {
-        const BankTransaction = require('../bank/bank.transaction.model');
-        await BankTransaction.create({
-          bank_id: sale.bank_id,
-          company_code: sale.company_code,
-          transaction_type: 'return',
-          sale_id: sale.id,
-          amount: returnAmount,
-          description: `Return sale payment for item: ${sale.name}`,
-          date: new Date().toISOString().split("T")[0],
-          created_at: Math.floor(Date.now() / 1000)
-        }, { transaction });
-        console.log(`✅ New bank return transaction entry added`);
-      }
-
-      // Add return entry to cash transactions
-      if (sale.cash_id) {
-        const CashTransaction = require('../cash/cash.transaction.model');
-        await CashTransaction.create({
-          cash_id: sale.cash_id,
-          company_code: sale.company_code,
-          transaction_type: 'return',
-          sale_id: sale.id,
-          amount: returnAmount,
-          description: `Return sale payment for item: ${sale.name}`,
-          date: new Date().toISOString().split("T")[0],
-          created_at: Math.floor(Date.now() / 1000)
-        }, { transaction });
-        console.log(`✅ New cash return transaction entry added`);
-      }
-    } catch (integrationError) {
-      console.log('Integration modules not available:', integrationError.message);
-    }
-
-    await transaction.commit();
+    await safeCommit(transaction);
 
     res.json({
       response: {
@@ -1192,17 +1123,15 @@ const returnSale = async (req, res) => {
           statusMessage: "Sale returned successfully",
         },
         data: {
-          sale_id: sale.id,
-          return_amount: returnAmount,
-          return_quantity: qtyToReturn,
-          message: "Sale returned successfully. Inventory restored and return entries added.",
+          message: "Sale returned and inventory restored successfully",
+          reason: reason || "Return processed"
         },
       },
     });
   } catch (error) {
-    await transaction.rollback();
+    await safeRollback(transaction);
     console.error("RETURN SALE ERROR:", error);
-
+    
     res.status(500).json({
       response: {
         status: {

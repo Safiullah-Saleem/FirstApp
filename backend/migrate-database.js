@@ -24,6 +24,63 @@ const LedgerAccount = require('./src/ledger/ledger.account.model');
 const LedgerTransaction = require('./src/ledger/ledger.transaction.model');
 const { sequelize, testConnection, getConnectionHealth, connectWithRetry } = require('./src/config/database');
 
+// ✅ ADDED: Function to create ledger_transactions table
+const createLedgerTransactionsTable = async () => {
+  try {
+    console.log("🔄 Creating ledger_transactions table...");
+    
+    // Check if table already exists
+    const tableExists = await sequelize.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'ledger_transactions'
+      );
+    `, { type: sequelize.QueryTypes.SELECT });
+
+    if (tableExists[0].exists) {
+      console.log("✅ ledger_transactions table already exists");
+      return;
+    }
+
+    // Create table
+    await sequelize.query(`
+      CREATE TABLE ledger_transactions (
+        id SERIAL PRIMARY KEY,
+        ledger_id UUID NOT NULL,
+        company_code VARCHAR(10) NOT NULL,
+        transaction_type VARCHAR(50) NOT NULL CHECK (transaction_type IN ('sale', 'return', 'payment', 'purchase')),
+        sale_id INTEGER NULL,
+        amount DECIMAL(15,2) DEFAULT 0.00,
+        paid_amount DECIMAL(15,2) DEFAULT 0.00,
+        balance_change DECIMAL(15,2) DEFAULT 0.00,
+        description VARCHAR(255) DEFAULT '',
+        date DATE NOT NULL DEFAULT CURRENT_DATE,
+        created_at BIGINT NOT NULL,
+        
+        CONSTRAINT fk_ledger_transactions_ledger 
+          FOREIGN KEY (ledger_id) 
+          REFERENCES ledger_accounts(id) 
+          ON DELETE CASCADE
+      );
+    `);
+    console.log("✅ ledger_transactions table created successfully");
+
+    // Create indexes
+    await sequelize.query(`
+      CREATE INDEX idx_ledger_transactions_ledger_id ON ledger_transactions(ledger_id);
+      CREATE INDEX idx_ledger_transactions_company_code ON ledger_transactions(company_code);
+      CREATE INDEX idx_ledger_transactions_type ON ledger_transactions(transaction_type);
+      CREATE INDEX idx_ledger_transactions_date ON ledger_transactions(date);
+    `);
+    console.log("✅ Indexes created successfully");
+
+  } catch (error) {
+    console.error('❌ Error creating ledger_transactions table:', error.message);
+    throw error;
+  }
+};
+
 // Enhanced migration function with Railway-specific error handling
 async function migrateWithModel() {
   const startTime = Date.now();
@@ -105,6 +162,13 @@ async function migrateWithModel() {
         }
       }
     }, 5, 2000); // 5 retries with 2s base delay for all models
+    console.log('');
+
+    // ✅ ADDED: Step 3.5 - Create ledger_transactions table
+    console.log("🔄 Step 3.5: Creating ledger_transactions table...");
+    await connectWithRetry(async () => {
+      await createLedgerTransactionsTable();
+    }, 3, 1000); // 3 retries with 1s base delay
     console.log('');
 
     // Step 4: Check existing data and insert sample data if needed
@@ -246,6 +310,20 @@ async function migrateWithModel() {
         if (sampleCheck) {
           console.log(`✅ Sample data verified: "${sampleCheck.name}" from ${sampleCheck.date}`);
         }
+
+        // ✅ ADDED: Verify ledger_transactions table exists
+        const ledgerTableCheck = await sequelize.query(`
+          SELECT COUNT(*) as table_count 
+          FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'ledger_transactions'
+        `, { type: sequelize.QueryTypes.SELECT });
+        
+        if (ledgerTableCheck[0].table_count > 0) {
+          console.log("✅ ledger_transactions table verified");
+        } else {
+          console.log("❌ ledger_transactions table not found");
+        }
         
         return { finalCount, testQuery, sampleCheck };
       }, 5, 2000); // 5 retries with 2s base delay
@@ -366,4 +444,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = migrateWithModel;
+module.exports = { migrateWithModel, createLedgerTransactionsTable };

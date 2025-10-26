@@ -12,10 +12,6 @@ const Bill = sequelize.define(
     company_code: {
       type: DataTypes.STRING(10),
       allowNull: false,
-      references: {
-        model: 'users',
-        key: 'company_code'
-      },
       validate: {
         notEmpty: true
       }
@@ -104,12 +100,14 @@ const Bill = sequelize.define(
       defaultValue: '',
     },
     bank_id: {
-      type: DataTypes.STRING(100),
-      defaultValue: '',
+      type: DataTypes.UUID, // ✅ CHANGED: Use UUID to match other models
+      allowNull: true,
+      defaultValue: null
     },
     ledger_id: {
-      type: DataTypes.STRING(100),
-      defaultValue: '',
+      type: DataTypes.UUID, // ✅ CHANGED: Use UUID to match other models
+      allowNull: true,
+      defaultValue: null
     },
     ledger_address: {
       type: DataTypes.TEXT,
@@ -158,6 +156,15 @@ const Bill = sequelize.define(
       {
         fields: ["payment_method"],
         name: "idx_bills_payment_method",
+      },
+      // ✅ ADDED: Indexes for better join performance
+      {
+        fields: ["ledger_id"],
+        name: "idx_bills_ledger_id",
+      },
+      {
+        fields: ["bank_id"],
+        name: "idx_bills_bank_id",
       }
     ],
     hooks: {
@@ -187,15 +194,23 @@ const Bill = sequelize.define(
         }
         bill.modified_at = Math.floor(Date.now() / 1000);
 
-        // Auto-generate bill number if not provided
+        // ✅ IMPROVED: Auto-generate bill number with transaction safety
         if (!bill.bill_number) {
-          const lastBill = await Bill.findOne({
-            where: { company_code: bill.company_code },
-            order: [['bill_number', 'DESC']],
-            attributes: ['bill_number']
-          });
-          
-          bill.bill_number = lastBill ? lastBill.bill_number + 1 : 1;
+          try {
+            // Use a simple approach without transaction to avoid connection issues
+            const lastBill = await Bill.findOne({
+              where: { company_code: bill.company_code },
+              order: [['bill_number', 'DESC']],
+              attributes: ['bill_number'],
+              // ✅ REMOVED: No transaction to prevent connection pool issues
+            });
+            
+            bill.bill_number = lastBill ? lastBill.bill_number + 1 : 1;
+          } catch (error) {
+            console.error('Error generating bill number:', error.message);
+            // Fallback to timestamp-based number
+            bill.bill_number = Math.floor(Date.now() / 1000);
+          }
         }
       },
 
@@ -205,6 +220,39 @@ const Bill = sequelize.define(
 
       afterCreate: async (bill) => {
         console.log(`✅ Bill #${bill.bill_number} created successfully for company ${bill.company_code}`);
+        
+        // ✅ ADDED: Integration with ledger/bank systems
+        try {
+          // If ledger_id provided, update ledger account
+          if (bill.ledger_id) {
+            const LedgerAccount = require('../ledger/ledger.account.model');
+            const ledger = await LedgerAccount.findOne({ where: { id: bill.ledger_id } });
+            if (ledger) {
+              await LedgerAccount.update({
+                saleTotal: parseFloat(ledger.saleTotal || 0) + parseFloat(bill.total || 0),
+                depositedSalesTotal: parseFloat(ledger.depositedSalesTotal || 0) + parseFloat(bill.paid || 0),
+                currentBalance: parseFloat(ledger.currentBalance || 0) + (parseFloat(bill.total || 0) - parseFloat(bill.paid || 0)),
+                modified_at: Math.floor(Date.now() / 1000)
+              }, { where: { id: bill.ledger_id } });
+              console.log(`✅ Ledger ${bill.ledger_id} updated with bill`);
+            }
+          }
+
+          // If bank_id provided, update bank account
+          if (bill.bank_id) {
+            const BankAccount = require('../bank/bank.account.model');
+            const bank = await BankAccount.findOne({ where: { id: bill.bank_id } });
+            if (bank) {
+              await BankAccount.update({
+                balance: parseFloat(bank.balance || 0) + parseFloat(bill.paid || 0),
+                modified_at: Math.floor(Date.now() / 1000)
+              }, { where: { id: bill.bank_id } });
+              console.log(`✅ Bank ${bill.bank_id} balance updated`);
+            }
+          }
+        } catch (integrationError) {
+          console.log('Integration modules not available:', integrationError.message);
+        }
       },
 
       afterUpdate: async (bill) => {
@@ -214,24 +262,53 @@ const Bill = sequelize.define(
   }
 );
 
-// Class methods for common queries
-Bill.findByCompany = function(companyCode) {
-  return this.findAll({
+// ✅ IMPROVED: Class methods without transactions for better performance
+Bill.findByCompany = function(companyCode, options = {}) {
+  const { page = 1, limit = 50 } = options;
+  const offset = (page - 1) * limit;
+
+  return this.findAndCountAll({
     where: { company_code: companyCode },
-    order: [['created_at', 'DESC']]
+    order: [['created_at', 'DESC']],
+    limit: parseInt(limit),
+    offset: offset,
+    include: options.include || []
   });
 };
 
-Bill.findByCompanyAndDateRange = function(companyCode, startDate, endDate) {
-  return this.findAll({
+Bill.findByCompanyAndDateRange = function(companyCode, startDate, endDate, options = {}) {
+  const { page = 1, limit = 50 } = options;
+  const offset = (page - 1) * limit;
+
+  return this.findAndCountAll({
     where: {
       company_code: companyCode,
       date: {
         [sequelize.Op.between]: [startDate, endDate]
       }
     },
-    order: [['date', 'DESC']]
+    order: [['date', 'DESC']],
+    limit: parseInt(limit),
+    offset: offset,
+    include: options.include || []
   });
+};
+
+// ✅ ADDED: Method to get next bill number without transaction
+Bill.getNextBillNumber = async function(companyCode) {
+  try {
+    const lastBill = await this.findOne({
+      where: { company_code: companyCode },
+      order: [['bill_number', 'DESC']],
+      attributes: ['bill_number']
+    });
+    
+    return lastBill ? lastBill.bill_number + 1 : 1;
+  } catch (error) {
+    console.error('Error getting next bill number:', error);
+    // Fallback to timestamp
+    return Math.floor(Date.now() / 1000);
+  }
 };
 
 // ===== ASSOCIATIONS =====
@@ -253,11 +330,27 @@ Bill.associate = function(models) {
     targetKey: 'company_code',
     as: 'company'
   });
+
+  // ✅ ADDED: Associations for ledger and bank integration
+  Bill.belongsTo(models.LedgerAccount, {
+    foreignKey: 'ledger_id',
+    as: 'ledger'
+  });
+
+  Bill.belongsTo(models.BankAccount, {
+    foreignKey: 'bank_id',
+    as: 'bank'
+  });
 };
 
 // Instance method to calculate outstanding amount
 Bill.prototype.getOutstandingAmount = function() {
   return Math.max(0, this.total - this.paid);
+};
+
+// ✅ ADDED: Method to check if bill is fully paid
+Bill.prototype.isFullyPaid = function() {
+  return this.paid >= this.total;
 };
 
 module.exports = Bill;

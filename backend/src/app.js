@@ -28,6 +28,9 @@ try {
 
 const app = express();
 
+// ✅ Track database initialization status
+let dbInitialized = false;
+
 // ✅ ENHANCED CORS Configuration for Railway
 app.use(
   cors({
@@ -59,22 +62,56 @@ app.use((req, res, next) => {
   next();
 });
 
-// ✅ IMPROVED Database connection test (non-blocking with retry logic)
+// ✅ Database readiness middleware - block requests until DB is ready
+app.use((req, res, next) => {
+  // Allow health check endpoints to work even if DB is not ready
+  if (req.path === '/health' || req.path === '/ready') {
+    return next();
+  }
+  
+  if (!dbInitialized) {
+    return res.status(503).json({
+      error: "Database is initializing",
+      message: "Please wait a moment and try again",
+      timestamp: new Date().toISOString()
+    });
+  }
+  
+  next();
+});
+
+// ✅ IMPROVED Database connection test with readiness tracking
 const initializeDatabaseAsync = async () => {
   let retryCount = 0;
-  const maxRetries = 3;
-  const retryDelay = 2000; // 2 seconds
+  const maxRetries = 2; // Reduced since we have more robust retry logic in database.js
+  const retryDelay = 5000; // 5 seconds - increased delay for sleeping databases
 
   while (retryCount < maxRetries) {
     try {
       console.log(`🔄 Database connection attempt ${retryCount + 1}/${maxRetries}...`);
-      await testConnection();
+      await testConnection(false); // Don't sync yet, models aren't loaded
       console.log("✅ Database connection established successfully");
 
       // Load and associate models after database connection
       console.log("🔄 Loading models and setting up associations...");
-      require('./models/index.js');
+      const models = require('./models/index.js');
       console.log("✅ Models loaded and associations set up successfully");
+
+      // Sync database with models loaded - handle errors gracefully
+      console.log("🔄 Syncing database...");
+      const { sequelize } = require('./config/database');
+      try {
+        await sequelize.sync({ alter: false });
+        console.log("✅ Database tables synced successfully");
+      } catch (syncError) {
+        console.warn("⚠️  Database sync warning:", syncError.message);
+        console.log("ℹ️  Database tables might already exist or have schema differences");
+        console.log("ℹ️  Continuing without sync - existing tables will be used");
+      }
+
+      // ✅ Mark database as initialized
+      dbInitialized = true;
+      console.log("🎉 Database is ready to handle requests!");
 
       return;
     } catch (error) {
@@ -82,11 +119,16 @@ const initializeDatabaseAsync = async () => {
       console.error(`❌ Database connection attempt ${retryCount} failed:`, error.message);
 
       if (retryCount < maxRetries) {
-        console.log(`⏳ Retrying in ${retryDelay}ms...`);
-        await new Promise(resolve => setTimeout(resolve, retryDelay));
+        const delay = retryDelay * retryCount; // Exponential backoff
+        console.log(`⏳ Retrying in ${delay}ms...`);
+        console.log(`💡 Railway free tier databases may take 30-90 seconds to wake up`);
+        await new Promise(resolve => setTimeout(resolve, delay));
       } else {
         console.error("❌ All database connection attempts failed - continuing without database");
         console.error("💡 The server will continue running, but database operations may fail");
+        console.error("💡 Railway free tier databases may take up to 2 minutes to wake up");
+        // Don't mark as initialized if failed
+        dbInitialized = false;
       }
     }
   }
@@ -95,6 +137,7 @@ const initializeDatabaseAsync = async () => {
 // Start database initialization in background (non-blocking)
 initializeDatabaseAsync().catch((error) => {
   console.error("❌ Database initialization failed:", error.message);
+  dbInitialized = false;
 });
 
 // ✅ FIXED: Routes mounting - CORRECTED BILLING PATH
@@ -174,11 +217,21 @@ app.get("/health", async (req, res) => {
 
 // ✅ ADDED Ready check for Railway
 app.get("/ready", (req, res) => {
-  res.status(200).json({
-    status: "ready",
-    timestamp: new Date().toISOString(),
-    service: "backend-api",
-  });
+  if (dbInitialized) {
+    res.status(200).json({
+      status: "ready",
+      timestamp: new Date().toISOString(),
+      service: "backend-api",
+      database: "ready"
+    });
+  } else {
+    res.status(503).json({
+      status: "not ready",
+      timestamp: new Date().toISOString(),
+      service: "backend-api",
+      database: "initializing"
+    });
+  }
 });
 
 // Error handling
@@ -226,18 +279,22 @@ if (require.main === module && process.env.NODE_ENV !== "test") {
   });
 
   // ✅ ENHANCED Graceful shutdown for Railway
-  const gracefulShutdown = (signal) => {
+  const gracefulShutdown = async (signal) => {
     console.log(`🛑 Received ${signal}, shutting down gracefully...`);
-    server.close((err) => {
+    
+    server.close(async (err) => {
       if (err) {
         console.error("❌ Error during shutdown:", err);
         process.exit(1);
       }
       console.log("✅ HTTP server closed successfully");
 
-      // Close database connections if needed
-      if (typeof getConnectionHealth().close === "function") {
-        getConnectionHealth().close();
+      // Close database connections properly
+      try {
+        const { closeConnection } = require("./config/database");
+        await closeConnection();
+      } catch (closeError) {
+        console.error("❌ Error closing database connection:", closeError.message);
       }
 
       console.log("👋 Shutdown completed");

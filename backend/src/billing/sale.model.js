@@ -11,20 +11,11 @@ const Sale = sequelize.define(
     },
     bill_id: {
       type: DataTypes.INTEGER,
-      allowNull: true,
-      references: {
-        model: 'bills',
-        key: 'id'
-      },
-      onDelete: 'CASCADE'
+      allowNull: true
     },
     company_code: {
       type: DataTypes.STRING(10),
       allowNull: false,
-      references: {
-        model: 'users',
-        key: 'company_code'
-      },
       validate: {
         notEmpty: true
       }

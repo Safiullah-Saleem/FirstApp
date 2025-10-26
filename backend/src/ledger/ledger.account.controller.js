@@ -1,4 +1,7 @@
 const LedgerAccount = require('./ledger.account.model');
+const LedgerTransaction = require('./ledger.transaction.model');
+const Sale = require('../billing/sale.model');
+const Purchase = require('../billing/purchase.model');
 
 const handleLedgerRequest = async (req, res) => {
   try {
@@ -63,9 +66,11 @@ const handleLedgerRequest = async (req, res) => {
 // 🔹 GET ALL LEDGERS BY COMPANY
 const getLedgersByCompany = async (data, res) => {
   try {
-    const { company_code, ledgerRegions = [], next_page_token = "" } = data;
+    // ✅ SUPPORT BOTH company_code AND company.code
+    const companyCode = data.company_code || data.company?.code;
+    const { ledgerRegions = [], next_page_token = "" } = data;
     
-    if (!company_code) {
+    if (!companyCode) {
       return res.json({
         response: {
           status: {
@@ -76,8 +81,10 @@ const getLedgersByCompany = async (data, res) => {
       });
     }
 
+    console.log(`🔍 Getting ledgers for company: ${companyCode}`);
+
     // Build where condition
-    let whereCondition = { company_code };
+    let whereCondition = { company_code: companyCode };
     
     // Filter by regions if provided
     if (ledgerRegions && ledgerRegions.length > 0) {
@@ -113,12 +120,13 @@ const getLedgersByCompany = async (data, res) => {
   }
 };
 
-// 🔹 GET SINGLE LEDGER BY ID
+// 🔹 GET SINGLE LEDGER BY ID - FIXED
 const getLedgerById = async (data, res) => {
   try {
-    const { id } = data;
+    // ✅ SUPPORT ALL FORMATS: id, _id, ledger.id, ledger_id
+    const ledgerId = data.id || data._id || data.ledger?.id || data.ledger_id;
     
-    if (!id) {
+    if (!ledgerId) {
       return res.json({
         response: {
           status: {
@@ -129,8 +137,10 @@ const getLedgerById = async (data, res) => {
       });
     }
 
+    console.log(`🔍 Looking up ledger with ID: ${ledgerId}`);
+
     const ledger = await LedgerAccount.findOne({
-      where: { id }
+      where: { id: ledgerId }
     });
 
     if (!ledger) {
@@ -161,9 +171,23 @@ const getLedgerById = async (data, res) => {
 // 🔹 CREATE NEW LEDGER
 const saveLedger = async (data, res) => {
   try {
-    const { ledger } = data;
+    // Check database connection before proceeding
+    const { sequelize } = require('../config/database');
+    if (!sequelize) {
+      return res.json({
+        response: {
+          status: {
+            statusCode: 503,
+            statusMessage: "Database connection is not available"
+          }
+        }
+      });
+    }
+
+    // ✅ SUPPORT BOTH ledger OBJECT AND DIRECT PROPERTIES
+    const ledgerData = data.ledger || data;
     
-    if (!ledger) {
+    if (!ledgerData) {
       return res.json({
         response: {
           status: {
@@ -174,9 +198,11 @@ const saveLedger = async (data, res) => {
       });
     }
 
-    const { name, company_code, ledgerType, address, region, phone, email, openingBalance } = ledger;
+    // ✅ SUPPORT BOTH company_code AND company.code
+    const companyCode = ledgerData.company_code || ledgerData.company?.code;
+    const { name, ledgerType, address, region, phone, email, openingBalance } = ledgerData;
     
-    if (!name || !company_code || !ledgerType) {
+    if (!name || !companyCode || !ledgerType) {
       return res.json({
         response: {
           status: {
@@ -187,10 +213,10 @@ const saveLedger = async (data, res) => {
       });
     }
 
-    const ledgerData = {
-      id: ledger.id || ledger._id, // Use provided id or _id or auto-generate
+    const newLedgerData = {
+      id: ledgerData.id || ledgerData._id,
       name,
-      company_code,
+      company_code: companyCode,
       ledgerType,
       address: address || "",
       region: region || "",
@@ -202,7 +228,7 @@ const saveLedger = async (data, res) => {
       modified_at: Math.floor(Date.now() / 1000)
     };
 
-    const newLedger = await LedgerAccount.create(ledgerData);
+    const newLedger = await LedgerAccount.create(newLedgerData);
 
     res.json({
       response: {
@@ -216,16 +242,25 @@ const saveLedger = async (data, res) => {
       }
     });
   } catch (error) {
+    console.error('saveLedger error details:', error);
     throw new Error(`Failed to create ledger: ${error.message}`);
   }
 };
 
-// 🔹 UPDATE LEDGER GENERAL INFORMATION
+// 🔹 UPDATE LEDGER GENERAL INFORMATION - FIXED
 const updateLedgerGeneral = async (data, res) => {
   try {
-    const { id, ...updateData } = data;
+    // ✅ SUPPORT ALL LEDGER ID FORMATS
+    const ledgerId = data.id || data._id || data.ledger?.id || data.ledger_id;
+    const updateData = { ...data };
     
-    if (!id) {
+    // Remove ID fields from update data
+    delete updateData.id;
+    delete updateData._id;
+    delete updateData.ledger_id;
+    if (updateData.ledger) delete updateData.ledger.id;
+    
+    if (!ledgerId) {
       return res.json({
         response: {
           status: {
@@ -236,7 +271,7 @@ const updateLedgerGeneral = async (data, res) => {
       });
     }
 
-    const existingLedger = await LedgerAccount.findOne({ where: { id } });
+    const existingLedger = await LedgerAccount.findOne({ where: { id: ledgerId } });
     if (!existingLedger) {
       return res.json({
         response: {
@@ -259,7 +294,7 @@ const updateLedgerGeneral = async (data, res) => {
     updateData.modified_at = Math.floor(Date.now() / 1000);
 
     await LedgerAccount.update(updateData, {
-      where: { id }
+      where: { id: ledgerId }
     });
 
     res.json({
@@ -269,7 +304,7 @@ const updateLedgerGeneral = async (data, res) => {
           statusMessage: "Ledger updated successfully"
         },
         data: { 
-          ledger: id 
+          ledger: ledgerId
         }
       }
     });
@@ -278,12 +313,20 @@ const updateLedgerGeneral = async (data, res) => {
   }
 };
 
-// 🔹 UPDATE LEDGER
+// 🔹 UPDATE LEDGER - FIXED
 const updateLedger = async (data, res) => {
   try {
-    const { id, ...updateData } = data;
+    // ✅ SUPPORT ALL LEDGER ID FORMATS
+    const ledgerId = data.id || data._id || data.ledger?.id || data.ledger_id;
+    const updateData = { ...data };
     
-    if (!id) {
+    // Remove ID fields from update data
+    delete updateData.id;
+    delete updateData._id;
+    delete updateData.ledger_id;
+    if (updateData.ledger) delete updateData.ledger.id;
+    
+    if (!ledgerId) {
       return res.json({
         response: {
           status: {
@@ -294,7 +337,7 @@ const updateLedger = async (data, res) => {
       });
     }
 
-    const existingLedger = await LedgerAccount.findOne({ where: { id } });
+    const existingLedger = await LedgerAccount.findOne({ where: { id: ledgerId } });
     if (!existingLedger) {
       return res.json({
         response: {
@@ -318,7 +361,7 @@ const updateLedger = async (data, res) => {
     filteredData.modified_at = Math.floor(Date.now() / 1000);
 
     await LedgerAccount.update(filteredData, {
-      where: { id }
+      where: { id: ledgerId }
     });
 
     res.json({
@@ -328,7 +371,7 @@ const updateLedger = async (data, res) => {
           statusMessage: "Ledger updated successfully"
         },
         data: { 
-          ledger: id 
+          ledger: ledgerId
         }
       }
     });
@@ -337,10 +380,12 @@ const updateLedger = async (data, res) => {
   }
 };
 
-// 🔹 UPDATE LEDGER WITH SALE TRANSACTION
+// 🔹 UPDATE LEDGER WITH SALE TRANSACTION - COMPLETELY FIXED
 const updateSaleLedger = async (data, res) => {
   try {
-    const { ledgerId, amount, type } = data;
+    // ✅ SUPPORT ALL LEDGER ID FORMATS
+    const ledgerId = data.ledgerId || data._id || data.ledger?.id || data.ledger_id;
+    const { amount, type, description, date } = data;
 
     if (!ledgerId || !amount || !type) {
       return res.json({
@@ -353,7 +398,9 @@ const updateSaleLedger = async (data, res) => {
       });
     }
 
-    const ledger = await LedgerAccount.findOne({ where: { _id: ledgerId } });
+    console.log(`💰 Processing sale for ledger: ${ledgerId}`);
+
+    const ledger = await LedgerAccount.findOne({ where: { id: ledgerId } });
     if (!ledger) {
       return res.json({
         response: {
@@ -383,34 +430,56 @@ const updateSaleLedger = async (data, res) => {
 
     if (type === 'sale') {
       newSaleTotal += parsedAmount;
-      // Assuming no deposit for simplicity, remaining amount affects balance
+      // For customer: Sale increases receivable (positive balance)
       balanceChange = parsedAmount;
     } else if (type === 'return') {
       newSaleTotal -= parsedAmount;
-      // For returns, subtract from balance
+      // Return decreases receivable (negative balance)
+      balanceChange = -parsedAmount;
+    } else if (type === 'payment') {
+      // Payment reduces receivable (negative balance)
+      newDepositedSalesTotal += parsedAmount;
       balanceChange = -parsedAmount;
     } else {
       return res.json({
         response: {
           status: {
             statusCode: 400,
-            statusMessage: "Invalid type. Must be 'sale' or 'return'"
+            statusMessage: "Invalid type. Must be 'sale', 'return', or 'payment'"
           }
         }
       });
     }
 
+    const newCurrentBalance = parseFloat(ledger.currentBalance || 0) + balanceChange;
+
+    // Update ledger account
     await LedgerAccount.update({
       saleTotal: newSaleTotal,
       depositedSalesTotal: newDepositedSalesTotal,
-      currentBalance: parseFloat(ledger.currentBalance || 0) + balanceChange,
+      currentBalance: newCurrentBalance,
       modified_at: Math.floor(Date.now() / 1000)
     }, {
       where: { id: ledgerId }
     });
 
-    // Here you would typically also save the sale transaction details
-    // in a separate sales table with ledger_id reference
+    // ✅ CREATE LEDGER TRANSACTION RECORD
+    try {
+      await LedgerTransaction.create({
+        ledger_id: ledgerId,
+        company_code: ledger.company_code,
+        transaction_type: type,
+        amount: parsedAmount,
+        paid_amount: type === 'payment' ? parsedAmount : 0,
+        balance_change: balanceChange,
+        description: description || `${type} transaction`,
+        date: date || new Date().toISOString().split('T')[0],
+        created_at: Math.floor(Date.now() / 1000)
+      });
+      console.log(`✅ Ledger transaction recorded for ${type}: ${ledgerId}`);
+    } catch (transactionError) {
+      console.log('Failed to save ledger transaction:', transactionError.message);
+    }
 
     res.json({
       response: {
@@ -419,7 +488,12 @@ const updateSaleLedger = async (data, res) => {
           statusMessage: "Sale ledger updated successfully"
         },
         data: {
-          ledger: ledgerId
+          ledger: ledgerId,
+          updatedFields: {
+            saleTotal: newSaleTotal,
+            depositedSalesTotal: newDepositedSalesTotal,
+            currentBalance: newCurrentBalance
+          }
         }
       }
     });
@@ -428,10 +502,12 @@ const updateSaleLedger = async (data, res) => {
   }
 };
 
-// 🔹 UPDATE LEDGER WITH PURCHASE TRANSACTION - FIXED VERSION
+// 🔹 UPDATE LEDGER WITH PURCHASE TRANSACTION - FIXED
 const updatePurchaseLedger = async (data, res) => {
   try {
-    const { ledgerId, amount, type, purchaseData } = data;
+    // ✅ SUPPORT ALL LEDGER ID FORMATS
+    const ledgerId = data.ledgerId || data._id || data.ledger?.id || data.ledger_id;
+    const { amount, type, description, date } = data;
 
     if (!ledgerId || !amount || !type) {
       return res.json({
@@ -444,7 +520,9 @@ const updatePurchaseLedger = async (data, res) => {
       });
     }
 
-    const ledger = await LedgerAccount.findOne({ where: { _id: ledgerId } });
+    console.log(`🛒 Processing purchase for ledger: ${ledgerId}`);
+
+    const ledger = await LedgerAccount.findOne({ where: { id: ledgerId } });
     if (!ledger) {
       return res.json({
         response: {
@@ -499,6 +577,7 @@ const updatePurchaseLedger = async (data, res) => {
 
     const newCurrentBalance = parseFloat(ledger.currentBalance || 0) + balanceChange;
 
+    // Update ledger account
     await LedgerAccount.update({
       purchasesTotal: newPurchasesTotal,
       depositedPurchasesTotal: newDepositedPurchasesTotal,
@@ -508,27 +587,22 @@ const updatePurchaseLedger = async (data, res) => {
       where: { id: ledgerId }
     });
 
-    // Save purchase transaction details if purchaseData is provided
-    if (purchaseData && type === 'purchase') {
-      try {
-        const Purchase = require('../billing/purchase.model');
-
-        const purchaseRecord = {
-          ...purchaseData,
-          ledger_id: ledgerId,
-          total_price: parsedAmount,
-          date: purchaseData.date || new Date().toISOString().split('T')[0],
-          company_code: ledger.company_code,
-          timestamp: Math.floor(Date.now() / 1000),
-          created_at: Math.floor(Date.now() / 1000),
-          modified_at: Math.floor(Date.now() / 1000)
-        };
-
-        await Purchase.create(purchaseRecord);
-        console.log(`✅ Purchase transaction recorded for ledger ${ledgerId}`);
-      } catch (purchaseError) {
-        console.log('Failed to save purchase transaction details:', purchaseError.message);
-      }
+    // ✅ CREATE LEDGER TRANSACTION RECORD
+    try {
+      await LedgerTransaction.create({
+        ledger_id: ledgerId,
+        company_code: ledger.company_code,
+        transaction_type: type,
+        amount: parsedAmount,
+        paid_amount: type === 'payment' ? parsedAmount : 0,
+        balance_change: balanceChange,
+        description: description || `${type} transaction`,
+        date: date || new Date().toISOString().split('T')[0],
+        created_at: Math.floor(Date.now() / 1000)
+      });
+      console.log(`✅ Ledger transaction recorded for ${type}: ${ledgerId}`);
+    } catch (transactionError) {
+      console.log('Failed to save ledger transaction:', transactionError.message);
     }
 
     res.json({
@@ -552,12 +626,13 @@ const updatePurchaseLedger = async (data, res) => {
   }
 };
 
-// 🔹 DELETE LEDGER
+// 🔹 DELETE LEDGER - FIXED
 const deleteLedger = async (data, res) => {
   try {
-    const { id } = data;
+    // ✅ SUPPORT ALL LEDGER ID FORMATS
+    const ledgerId = data.id || data._id || data.ledger?.id || data.ledger_id;
     
-    if (!id) {
+    if (!ledgerId) {
       return res.json({
         response: {
           status: {
@@ -568,7 +643,9 @@ const deleteLedger = async (data, res) => {
       });
     }
 
-    const existingLedger = await LedgerAccount.findOne({ where: { id } });
+    console.log(`🗑️ Deleting ledger: ${ledgerId}`);
+
+    const existingLedger = await LedgerAccount.findOne({ where: { id: ledgerId } });
     if (!existingLedger) {
       return res.json({
         response: {
@@ -581,7 +658,7 @@ const deleteLedger = async (data, res) => {
     }
 
     await LedgerAccount.destroy({
-      where: { id }
+      where: { id: ledgerId }
     });
 
     res.json({
@@ -591,7 +668,7 @@ const deleteLedger = async (data, res) => {
           statusMessage: "Ledger deleted successfully"
         },
         data: { 
-          ledger: id 
+          ledger: ledgerId
         }
       }
     });
@@ -600,11 +677,11 @@ const deleteLedger = async (data, res) => {
   }
 };
 
-// 🔹 GET LEDGER HISTORY (Integration with Sales/Purchases) - FIXED VERSION
+// 🔹 GET LEDGER HISTORY - FIXED WITH ENHANCED DEBUGGING
 const getLedgerHistory = async (data, res) => {
   try {
-    const { id, _id } = data;
-    const ledgerId = id || _id; // Support both id and _id parameters
+    // ✅ SUPPORT ALL LEDGER ID FORMATS
+    const ledgerId = data.id || data._id || data.ledger?.id || data.ledger_id;
     
     if (!ledgerId) {
       return res.json({
@@ -616,6 +693,8 @@ const getLedgerHistory = async (data, res) => {
         }
       });
     }
+
+    console.log(`📊 Getting history for ledger: ${ledgerId}`);
 
     const ledger = await LedgerAccount.findOne({ where: { id: ledgerId } });
     if (!ledger) {
@@ -629,49 +708,120 @@ const getLedgerHistory = async (data, res) => {
       });
     }
 
-    // Get transactions linked to this ledger
+    console.log(`🔍 Ledger found: ${ledger.name}, Company: ${ledger.company_code}`);
+
+    // ✅ GET TRANSACTIONS FROM SALES AND PURCHASES TABLES
     let sales = [];
     let purchases = [];
     
     try {
-      // ✅ FIXED: Use correct paths to models
-      const Purchase = require('../billing/purchase.model');
-      const Sale = require('../billing/sale.model');
-      
-      // Get purchases linked to this ledger
-      purchases = await Purchase.findAll({
-        where: { ledger_id: ledgerId },
-        order: [['date', 'DESC']]
+      // Enhanced debugging: Check ALL sales and purchases to see what ledger_ids exist
+      const allSalesSample = await Sale.findAll({
+        where: { company_code: ledger.company_code },
+        limit: 10,
+        attributes: ['id', 'name', 'ledger_id', 'total_price', 'date'],
+        raw: true
       });
       
-      // Get sales linked to this ledger
-      sales = await Sale.findAll({
-        where: { ledger_id: ledgerId },
-        order: [['date', 'DESC']]
+      const allPurchasesSample = await Purchase.findAll({
+        where: { company_code: ledger.company_code },
+        limit: 10,
+        attributes: ['id', 'name', 'ledger_id', 'total_price', 'date'],
+        raw: true
+      });
+
+      console.log('🔍 ALL Sales sample (first 10):', allSalesSample);
+      console.log('🔍 ALL Purchases sample (first 10):', allPurchasesSample);
+
+      // Count transactions for this specific ledger
+      const salesCount = await Sale.count({ 
+        where: { 
+          ledger_id: ledgerId, 
+          company_code: ledger.company_code 
+        } 
       });
       
-      console.log(`✅ Found ${purchases.length} purchases and ${sales.length} sales for ledger ${ledgerId}`);
+      const purchasesCount = await Purchase.count({ 
+        where: { 
+          ledger_id: ledgerId, 
+          company_code: ledger.company_code 
+        } 
+      });
       
-    } catch (importError) {
-      console.log('Models not available:', importError.message);
+      console.log(`📈 Transactions for ledger ${ledgerId}: Sales: ${salesCount}, Purchases: ${purchasesCount}`);
+
+      // Get transactions if they exist
+      if (salesCount > 0) {
+        sales = await Sale.findAll({
+          where: { 
+            ledger_id: ledgerId,
+            company_code: ledger.company_code
+          },
+          order: [['date', 'DESC'], ['created_at', 'DESC']],
+          raw: true
+        });
+        console.log(`✅ Loaded ${sales.length} sales for ledger`);
+      } else {
+        console.log(`ℹ️ No sales found for ledger ${ledgerId}`);
+      }
+
+      if (purchasesCount > 0) {
+        purchases = await Purchase.findAll({
+          where: { 
+            ledger_id: ledgerId,
+            company_code: ledger.company_code
+          },
+          order: [['date', 'DESC'], ['created_at', 'DESC']],
+          raw: true
+        });
+        console.log(`✅ Loaded ${purchases.length} purchases for ledger`);
+      } else {
+        console.log(`ℹ️ No purchases found for ledger ${ledgerId}`);
+      }
+
+    } catch (transactionError) {
+      console.log('❌ Error fetching sales/purchases:', transactionError.message);
     }
 
-    res.json({
+    // ✅ FINAL RESPONSE
+    const responseData = {
       response: {
         status: {
           statusCode: 200,
           statusMessage: "OK"
         },
         data: {
-          ledger,
+          ledger: {
+            id: ledger.id,
+            name: ledger.name,
+            company_code: ledger.company_code,
+            ledgerType: ledger.ledgerType,
+            address: ledger.address,
+            region: ledger.region,
+            phone: ledger.phone,
+            email: ledger.email,
+            openingBalance: ledger.openingBalance,
+            currentBalance: ledger.currentBalance,
+            saleTotal: ledger.saleTotal,
+            depositedSalesTotal: ledger.depositedSalesTotal,
+            purchasesTotal: ledger.purchasesTotal,
+            depositedPurchasesTotal: ledger.depositedPurchasesTotal,
+            created_at: ledger.created_at,
+            modified_at: ledger.modified_at
+          },
           transactions: {
-            sales,
-            purchases
+            sales: sales,
+            purchases: purchases
           }
         }
       }
-    });
+    };
+
+    console.log(`🎯 Final response prepared with ${sales.length} sales and ${purchases.length} purchases`);
+    res.json(responseData);
+
   } catch (error) {
+    console.error('❌ getLedgerHistory error:', error);
     throw new Error(`Failed to fetch ledger history: ${error.message}`);
   }
 };

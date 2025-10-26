@@ -82,7 +82,7 @@ const getPoolConfig = () => {
   const poolConfig = {
     max: parseInt(process.env.DB_POOL_MAX) || 3, // Reduced for Railway stability (Railway has connection limits)
     min: parseInt(process.env.DB_POOL_MIN) || 0, // Start with 0 for Railway efficiency
-    acquire: parseInt(process.env.DB_POOL_ACQUIRE) || 120000, // Increased to 120s for Railway free tier wake-up
+    acquire: parseInt(process.env.DB_POOL_ACQUIRE) || 180000, // Increased to 180s for Railway free tier wake-up
     idle: parseInt(process.env.DB_POOL_IDLE) || 10000, // Increased idle time for Railway stability
     evict: parseInt(process.env.DB_POOL_EVICT) || 1000,
     // Additional Railway-specific pool options
@@ -160,14 +160,14 @@ const initializeDatabase = () => {
         dialectOptions: {
           ssl: sslConfig,
           // Railway-specific connection options with extended timeouts
-          connectTimeout: 60000, // Increased to 60s for Railway free tier wake-up
-          requestTimeout: 60000, // Increased to 60s for Railway free tier wake-up
+          connectTimeout: 120000, // Increased to 120s for Railway free tier wake-up
+          requestTimeout: 120000, // Increased to 120s for Railway free tier wake-up
           // Additional Railway optimizations
           keepAlive: true,
           keepAliveInitialDelayMillis: 0,
           // Enhanced timeout handling for Railway
-          statement_timeout: 60000, // Increased statement timeout
-          idle_in_transaction_session_timeout: 60000, // Increased idle timeout
+          statement_timeout: 120000, // Increased statement timeout
+          idle_in_transaction_session_timeout: 120000, // Increased idle timeout
           // Railway-specific connection parameters
           application_name: 'railway-app',
           // Additional Railway optimizations
@@ -181,7 +181,7 @@ const initializeDatabase = () => {
         pool: poolConfig,
         // Enhanced Railway-specific connection options with robust retry logic
         retry: {
-          max: 10, // Increased retry attempts for Railway free tier
+          max: 15, // Increased retry attempts for Railway free tier wake-up
           match: [
             /ConnectionError/,
             /SequelizeConnectionError/,
@@ -203,8 +203,8 @@ const initializeDatabase = () => {
             /Database is starting/,
             /Database is sleeping/,
           ],
-          backoffBase: 2000, // Increased base delay for Railway
-          backoffExponent: 2.0, // More aggressive exponential backoff
+          backoffBase: 3000, // Increased base delay for Railway sleeping databases
+          backoffExponent: 1.8, // Slightly less aggressive exponential backoff
         },
         // Railway-specific query options
         define: {
@@ -229,10 +229,10 @@ const initializeDatabase = () => {
           dialect: "postgres",
           dialectOptions: {
             ssl: sslConfig,
-            connectTimeout: 60000, // Increased to 60s for Railway compatibility
-            requestTimeout: 60000, // Increased to 60s for Railway compatibility
-            statement_timeout: 60000, // Increased statement timeout
-            idle_in_transaction_session_timeout: 60000, // Increased idle timeout
+            connectTimeout: 120000, // Increased to 120s for Railway compatibility
+            requestTimeout: 120000, // Increased to 120s for Railway compatibility
+            statement_timeout: 120000, // Increased statement timeout
+            idle_in_transaction_session_timeout: 120000, // Increased idle timeout
             application_name: 'local-app',
             binary: false,
             parseInputDatesAsUTC: true,
@@ -243,7 +243,7 @@ const initializeDatabase = () => {
           logging: logging,
           pool: poolConfig,
           retry: {
-            max: 10, // Increased retry attempts for Railway compatibility
+            max: 15, // Increased retry attempts for Railway compatibility
             match: [
               /ConnectionError/,
               /SequelizeConnectionError/,
@@ -265,8 +265,8 @@ const initializeDatabase = () => {
               /Database is starting/,
               /Database is sleeping/,
             ],
-            backoffBase: 2000, // Increased base delay for Railway
-            backoffExponent: 2.0, // More aggressive exponential backoff
+            backoffBase: 3000, // Increased base delay for Railway sleeping databases
+            backoffExponent: 1.8, // Slightly less aggressive exponential backoff
           },
           define: {
             timestamps: true,
@@ -285,11 +285,12 @@ const initializeDatabase = () => {
   }
 };
 
-// Initialize the connection
+// Initialize the connection - this is synchronous and creates the sequelize instance
+// The actual connection will be tested in testConnection() which is called from app.js
 sequelize = initializeDatabase();
 
-// Enhanced Railway-specific connection retry wrapper with timeout
-const connectWithRetry = async (operation, maxRetries = 10, baseDelay = 2000, timeoutMs = 60000) => {
+// Enhanced Railway-specific connection retry wrapper with extended timeout
+const connectWithRetry = async (operation, maxRetries = 10, baseDelay = 2000, timeoutMs = 180000) => {
   let lastError;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -302,7 +303,7 @@ const connectWithRetry = async (operation, maxRetries = 10, baseDelay = 2000, ti
         throw new Error('Connection pool is closed');
       }
 
-      // Wrap the operation with a timeout
+      // Wrap the operation with a timeout (increased to 180 seconds for Railway free tier)
       const timeoutPromise = new Promise((_, reject) => {
         setTimeout(() => reject(new Error('Operation timed out')), timeoutMs);
       });
@@ -339,8 +340,8 @@ const connectWithRetry = async (operation, maxRetries = 10, baseDelay = 2000, ti
         throw error;
       }
 
-      // Calculate exponential backoff delay
-      const delay = baseDelay * Math.pow(2, attempt - 1);
+      // Calculate exponential backoff delay with increased delays for sleeping databases
+      const delay = Math.min(baseDelay * Math.pow(2, attempt - 1), 30000); // Cap at 30 seconds
       console.log(`⏳ Waiting ${delay}ms before retry...`);
       await new Promise(resolve => setTimeout(resolve, delay));
     }
@@ -350,7 +351,7 @@ const connectWithRetry = async (operation, maxRetries = 10, baseDelay = 2000, ti
 };
 
 // Enhanced test connection function with detailed Railway debugging and retry logic
-const testConnection = async () => {
+const testConnection = async (syncDatabase = false) => {
   try {
     console.log("🔍 Testing database connection with Railway retry logic...");
     
@@ -360,11 +361,13 @@ const testConnection = async () => {
       console.log("✅ PostgreSQL connection established successfully.");
     });
     
-    // Test database sync with retry
-    await connectWithRetry(async () => {
-      await sequelize.sync({ alter: false });
-      console.log("✅ Database tables verified and ready.");
-    });
+    // Only sync if explicitly requested (and models are loaded)
+    if (syncDatabase) {
+      await connectWithRetry(async () => {
+        await sequelize.sync({ alter: false });
+        console.log("✅ Database tables verified and ready.");
+      });
+    }
     
     // Test pool status
     const pool = sequelize.connectionManager.pool;
@@ -445,9 +448,9 @@ const closeConnection = async () => {
   }
 };
 
-// Handle Railway shutdown signals
-process.on('SIGTERM', closeConnection);
-process.on('SIGINT', closeConnection);
+// Handle Railway shutdown signals - REMOVED to prevent conflicts with server.js handlers
+// process.on('SIGTERM', closeConnection);
+// process.on('SIGINT', closeConnection);
 
 module.exports = { 
   sequelize, 
