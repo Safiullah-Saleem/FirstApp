@@ -11,11 +11,20 @@ const Purchase = sequelize.define(
     },
     bill_id: {
       type: DataTypes.INTEGER,
-      allowNull: true
+      allowNull: true,
+      references: {
+        model: 'bills',
+        key: 'id'
+      },
+      onDelete: 'CASCADE'
     },
     company_code: {
       type: DataTypes.STRING(10),
       allowNull: false,
+      references: {
+        model: 'users',
+        key: 'company_code'
+      },
       validate: {
         notEmpty: true
       }
@@ -289,17 +298,40 @@ const Purchase = sequelize.define(
 
         // ✅ AUTO-INTEGRATION LOGIC
         try {
-          // If ledger_id provided, update ledger
+          // If ledger_id provided, update ledger AND create ledger transaction
           if (purchase.ledger_id) {
-            const LedgerAccount = require('../../ledger/ledger.account.model.js');
+            const LedgerAccount = require('../ledger/ledger.account.model.js');
             const ledger = await LedgerAccount.findOne({ where: { id: purchase.ledger_id } });
             if (ledger) {
+              const balanceChange = -parseFloat(purchase.total_price || 0); // Negative for purchases
+              
+              // Update ledger account
               await LedgerAccount.update({
                 purchasesTotal: parseFloat(ledger.purchasesTotal || 0) + parseFloat(purchase.total_price || 0),
                 depositedPurchasesTotal: parseFloat(ledger.depositedPurchasesTotal || 0) + parseFloat(purchase.paid || 0),
-                currentBalance: parseFloat(ledger.currentBalance || 0) - (parseFloat(purchase.total_price || 0) - parseFloat(purchase.paid || 0)),
+                currentBalance: parseFloat(ledger.currentBalance || 0) + balanceChange,
                 modified_at: Math.floor(Date.now() / 1000)
               }, { where: { id: purchase.ledger_id } });
+              
+              // ✅ CREATE LEDGER TRANSACTION RECORD
+              try {
+                const LedgerTransaction = require('../ledger/ledger.transaction.model.js');
+                await LedgerTransaction.create({
+                  ledger_id: purchase.ledger_id,
+                  company_code: purchase.company_code,
+                  transaction_type: 'purchase',
+                  amount: parseFloat(purchase.total_price || 0),
+                  paid_amount: parseFloat(purchase.paid || 0),
+                  balance_change: balanceChange,
+                  description: `Purchase: ${purchase.name} (${purchase.quantity} ${purchase.unit})`,
+                  date: purchase.date,
+                  created_at: Math.floor(Date.now() / 1000)
+                });
+                console.log(`✅ Ledger transaction created for purchase: ${purchase.ledger_id}`);
+              } catch (transactionError) {
+                console.log('Failed to create ledger transaction:', transactionError.message);
+              }
+              
               console.log(`✅ Ledger ${purchase.ledger_id} updated with purchase`);
             }
           }
@@ -336,6 +368,38 @@ const Purchase = sequelize.define(
 
       afterUpdate: async (purchase) => {
         console.log(`📝 Purchase updated for item: ${purchase.name}`);
+
+        // If ledger_id changed or purchase amount changed, update ledger
+        if (purchase.ledger_id && purchase.changed('total_price')) {
+          try {
+            const LedgerAccount = require('../ledger/ledger.account.model.js');
+            const LedgerTransaction = require('../ledger/ledger.transaction.model.js');
+            
+            const ledger = await LedgerAccount.findOne({ where: { id: purchase.ledger_id } });
+            if (ledger) {
+              // Find existing ledger transaction for this purchase
+              const existingTransaction = await LedgerTransaction.findOne({
+                where: {
+                  ledger_id: purchase.ledger_id,
+                  description: { [Op.like]: `%Purchase: ${purchase.name}%` }
+                }
+              });
+
+              if (existingTransaction) {
+                // Update existing transaction
+                await LedgerTransaction.update({
+                  amount: parseFloat(purchase.total_price || 0),
+                  paid_amount: parseFloat(purchase.paid || 0),
+                  balance_change: -parseFloat(purchase.total_price || 0),
+                  modified_at: Math.floor(Date.now() / 1000)
+                }, { where: { id: existingTransaction.id } });
+                console.log(`✅ Ledger transaction updated for purchase: ${purchase.id}`);
+              }
+            }
+          } catch (error) {
+            console.log('Error updating ledger transaction:', error.message);
+          }
+        }
       }
     },
   }
@@ -414,6 +478,26 @@ Purchase.findByBankId = function(bankId, companyCode, options = {}) {
   return this.findAndCountAll({
     where: {
       bank_id: bankId,
+      company_code: companyCode
+    },
+    include: [{
+      association: 'bill',
+      attributes: ['id', 'bill_number', 'customer', 'date']
+    }],
+    order: [['date', 'DESC']],
+    limit: parseInt(limit),
+    offset: offset
+  });
+};
+
+// Find purchases by cash_id (NEW METHOD)
+Purchase.findByCashId = function(cashId, companyCode, options = {}) {
+  const { page = 1, limit = 50 } = options;
+  const offset = (page - 1) * limit;
+
+  return this.findAndCountAll({
+    where: {
+      cash_id: cashId,
       company_code: companyCode
     },
     include: [{
@@ -553,6 +637,119 @@ Purchase.getTopPurchasedItems = async function(companyCode, limit = 10, startDat
   });
 };
 
+// ===== NEW LEDGER INTEGRATION METHODS =====
+
+// Link existing purchases to ledger (for migration)
+Purchase.linkToLedger = async function(purchaseId, ledgerId, companyCode) {
+  const purchase = await this.findOne({
+    where: {
+      id: purchaseId,
+      company_code: companyCode
+    }
+  });
+
+  if (!purchase) {
+    throw new Error('Purchase not found');
+  }
+
+  // Update purchase with ledger_id
+  await this.update(
+    { ledger_id: ledgerId },
+    { where: { id: purchaseId } }
+  );
+
+  // Create ledger transaction
+  try {
+    const LedgerTransaction = require('../ledger/ledger.transaction.model.js');
+    await LedgerTransaction.create({
+      ledger_id: ledgerId,
+      company_code: companyCode,
+      transaction_type: 'purchase',
+      amount: parseFloat(purchase.total_price || 0),
+      paid_amount: parseFloat(purchase.paid || 0),
+      balance_change: -parseFloat(purchase.total_price || 0),
+      description: `Purchase: ${purchase.name} (${purchase.quantity} ${purchase.unit})`,
+      date: purchase.date,
+      created_at: Math.floor(Date.now() / 1000)
+    });
+    console.log(`✅ Linked purchase ${purchaseId} to ledger ${ledgerId}`);
+  } catch (error) {
+    console.log('Failed to create ledger transaction:', error.message);
+  }
+
+  return purchase;
+};
+
+// Get purchase history for ledger (compatible with getLedgerHistory)
+Purchase.getLedgerPurchaseHistory = async function(ledgerId, companyCode) {
+  return this.findAll({
+    where: {
+      ledger_id: ledgerId,
+      company_code: companyCode
+    },
+    attributes: [
+      'id',
+      'name',
+      'description',
+      'total_price',
+      'paid',
+      'date',
+      'created_at',
+      'quantity',
+      'unit',
+      'purchase_price',
+      'vendor'
+    ],
+    order: [['date', 'DESC'], ['created_at', 'DESC']]
+  });
+};
+
+// Migrate existing purchases to link with ledgers
+Purchase.migrateExistingPurchases = async function(companyCode) {
+  const purchases = await this.findAll({
+    where: {
+      ledger_id: null,
+      company_code: companyCode,
+      vendor: { [Op.ne]: '' } // Only purchases with vendor names
+    }
+  });
+
+  console.log(`🔄 Migrating ${purchases.length} purchases to ledger system...`);
+
+  let migratedCount = 0;
+  let errorCount = 0;
+
+  for (const purchase of purchases) {
+    try {
+      // Find appropriate ledger based on vendor name
+      const LedgerAccount = require('../ledger/ledger.account.model.js');
+      const ledger = await LedgerAccount.findOne({
+        where: {
+          name: { [Op.like]: `%${purchase.vendor}%` },
+          company_code: companyCode,
+          ledgerType: 'supplier'
+        }
+      });
+
+      if (ledger) {
+        await this.linkToLedger(purchase.id, ledger.id, companyCode);
+        migratedCount++;
+        console.log(`✅ Migrated purchase ${purchase.id} to ledger ${ledger.name}`);
+      }
+    } catch (error) {
+      errorCount++;
+      console.log(`❌ Failed to migrate purchase ${purchase.id}:`, error.message);
+    }
+  }
+
+  return {
+    total: purchases.length,
+    migrated: migratedCount,
+    errors: errorCount,
+    message: `Migration completed: ${migratedCount} successful, ${errorCount} errors`
+  };
+};
+
 // ===== INSTANCE METHODS =====
 
 // Calculate profit margin percentage
@@ -586,6 +783,16 @@ Purchase.prototype.getDiscountPercentage = function() {
   return ((this.discount / originalPrice) * 100).toFixed(2);
 };
 
+// Get ledger integration status
+Purchase.prototype.getLedgerStatus = function() {
+  return {
+    has_ledger: !!this.ledger_id,
+    has_bank: !!this.bank_id,
+    has_cash: !!this.cash_id,
+    integration_complete: !!(this.ledger_id && (this.bank_id || this.cash_id))
+  };
+};
+
 // ===== VIRTUAL FIELDS =====
 Object.defineProperty(Purchase.prototype, 'profit_margin_percentage', {
   get: function() {
@@ -602,6 +809,12 @@ Object.defineProperty(Purchase.prototype, 'discount_percentage', {
 Object.defineProperty(Purchase.prototype, 'original_total', {
   get: function() {
     return (this.purchase_price * this.quantity) + parseFloat(this.discount || 0);
+  }
+});
+
+Object.defineProperty(Purchase.prototype, 'ledger_integration_status', {
+  get: function() {
+    return this.getLedgerStatus();
   }
 });
 
