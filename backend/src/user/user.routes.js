@@ -6,7 +6,8 @@ const {
   updateUser,
   getUser,
   getAllUsers,
-  getCurrentUser
+  getCurrentUser,
+  deleteUser
 } = require("./user.controller");
 
 const router = express.Router();
@@ -20,5 +21,7 @@ router.get("/", authenticate, getAllUsers);
 router.get("/profile/me", authenticate, getCurrentUser);
 router.get("/:email", authenticate, getUser);
 router.post("/update", authenticate, updateUser);
+router.delete("/:email", authenticate, deleteUser); // DELETE route
+router.post("/delete", authenticate, deleteUser);   // POST route for flexibility
 
 module.exports = router;
