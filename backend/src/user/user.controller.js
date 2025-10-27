@@ -418,89 +418,11 @@ const getCurrentUser = async (req, res) => {
   }
 };
 
-// Delete User
-const deleteUser = async (req, res) => {
-  try {
-    console.log("=== DELETE USER REQUEST ===");
-    console.log("Request body:", req.body);
-    console.log("Request params:", req.params);
-
-    let userEmail;
-
-    // Handle different request formats
-    if (req.body.request?.data?._id) {
-      userEmail = req.body.request.data._id;
-    } else if (req.body.data?._id) {
-      userEmail = req.body.data._id;
-    } else if (req.body._id) {
-      userEmail = req.body._id;
-    } else if (req.params.email) {
-      userEmail = req.params.email;
-    }
-
-    console.log("User email to delete:", userEmail);
-
-    if (!userEmail) {
-      return res.status(400).json(
-        errorResponse(400, "User email is required")
-      );
-    }
-
-    // SECURITY: Ensure user can only delete users in their company
-    const companyCode = req.user.company_code;
-    const currentUserEmail = req.user.email;
-
-    // Prevent user from deleting themselves
-    if (userEmail === currentUserEmail) {
-      return res.status(400).json(
-        errorResponse(400, "You cannot delete your own account")
-      );
-    }
-
-    // Find user by email within the same company
-    const user = await User.findOne({ 
-      where: { 
-        email: userEmail,
-        company_code: companyCode // SECURITY: Only same company
-      } 
-    });
-
-    if (!user) {
-      return res.status(404).json(
-        errorResponse(404, "User not found")
-      );
-    }
-
-    // Store user info for response before deletion
-    const deletedUserInfo = {
-      email: user.email,
-      name: user.name,
-      role: user.role
-    };
-
-    // Delete the user
-    await user.destroy();
-    console.log("User deleted successfully:", userEmail);
-
-    res.json(
-      successResponse("User deleted successfully", {
-        deletedUser: deletedUserInfo
-      })
-    );
-  } catch (error) {
-    console.error("DELETE USER ERROR:", error);
-    res.status(500).json(
-      errorResponse(500, "Internal server error")
-    );
-  }
-};
-
 module.exports = {
   signupAdmin,
   loginAdmin,
   updateUser,
   getUser,
   getAllUsers,
-  getCurrentUser,
-  deleteUser
+  getCurrentUser
 };
