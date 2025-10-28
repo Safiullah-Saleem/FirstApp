@@ -418,11 +418,92 @@ const getCurrentUser = async (req, res) => {
   }
 };
 
+// Delete User - NEW FUNCTION
+const deleteUser = async (req, res) => {
+  try {
+    console.log("=== DELETE USER REQUEST ===");
+    console.log("Request params:", req.params);
+    console.log("Authenticated user:", req.user);
+
+    const { email } = req.params;
+    
+    if (!email) {
+      return res.status(400).json(
+        errorResponse(400, "User email is required")
+      );
+    }
+
+    // SECURITY: Ensure user can only delete users in their company
+    const companyCode = req.user.company_code;
+    const currentUserEmail = req.user.email;
+
+    console.log(`Attempting to delete user: ${email} from company: ${companyCode}`);
+    console.log(`Current authenticated user: ${currentUserEmail}`);
+
+    // Prevent users from deleting themselves
+    if (email === currentUserEmail) {
+      return res.status(400).json(
+        errorResponse(400, "You cannot delete your own account")
+      );
+    }
+
+    // Find user by email within the same company
+    const user = await User.findOne({ 
+      where: { 
+        email: email,
+        company_code: companyCode // SECURITY: Only same company
+      } 
+    });
+
+    if (!user) {
+      console.log("User not found for deletion:", email);
+      return res.status(404).json(
+        errorResponse(404, "User not found")
+      );
+    }
+
+    console.log("User found for deletion:", {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role
+    });
+
+    // Prevent deletion of company admin (optional security measure)
+    if (user.role === 'company_admin') {
+      return res.status(403).json(
+        errorResponse(403, "Cannot delete company admin user")
+      );
+    }
+
+    // Perform the deletion
+    await user.destroy();
+    
+    console.log("✅ USER DELETED SUCCESSFULLY:", email);
+
+    res.json(
+      successResponse("User deleted successfully", {
+        deletedUser: {
+          email: email,
+          name: user.name,
+          company_code: companyCode
+        }
+      })
+    );
+  } catch (error) {
+    console.error("❌ DELETE USER ERROR:", error);
+    res.status(500).json(
+      errorResponse(500, "Internal server error: " + error.message)
+    );
+  }
+};
+
 module.exports = {
   signupAdmin,
   loginAdmin,
   updateUser,
   getUser,
   getAllUsers,
-  getCurrentUser
+  getCurrentUser,
+  deleteUser // Export the new function
 };
