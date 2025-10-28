@@ -1,347 +1,245 @@
-const { Sequelize } = require("sequelize");
-require("dotenv").config({ path: require("path").resolve(__dirname, "../../.env") });
+const { Sequelize,Op } = require("sequelize");
+require("dotenv").config();
 
 let sequelize;
+let isConnected = false;
+let currentDatabaseType = 'unknown';
 
-// Enhanced connection parameter validation for Railway
+// ==================== DATABASE CONNECTION ====================
+
+// Validate connection parameters
 const validateConnectionParams = () => {
   const errors = [];
   
+  // Check Railway DATABASE_URL
   if (process.env.DATABASE_URL) {
     try {
       const url = new URL(process.env.DATABASE_URL);
-      
-      // Validate Railway DATABASE_URL format: postgresql://user:password@host:port/database
-      if (!url.protocol || !url.hostname || !url.port || !url.pathname) {
-        errors.push("Invalid DATABASE_URL format - missing required components");
-      }
-      
-      // Check for Railway-specific protocol
-      if (url.protocol !== 'postgresql:' && url.protocol !== 'postgres:') {
-        errors.push(`Invalid protocol: ${url.protocol}. Expected 'postgresql:' or 'postgres:'`);
-      }
-      
-      // Validate port is numeric
-      if (isNaN(parseInt(url.port))) {
-        errors.push(`Invalid port: ${url.port}. Must be a number`);
-      }
-      
-      // Validate database name exists
-      const dbName = url.pathname.slice(1); // Remove leading slash
-      if (!dbName) {
-        errors.push("Database name is missing from DATABASE_URL");
-      }
-      
-      console.log(`🔍 DATABASE_URL validation: ${url.protocol}//${url.hostname}:${url.port}${url.pathname}`);
-      
+      if (!url.hostname) errors.push('DATABASE_URL missing hostname');
+      if (!url.port) errors.push('DATABASE_URL missing port');
+      if (!url.username) errors.push('DATABASE_URL missing username');
+      if (!url.password) errors.push('DATABASE_URL missing password');
+      if (!url.pathname || url.pathname === '/') errors.push('DATABASE_URL missing database name');
     } catch (error) {
-      errors.push(`DATABASE_URL is not a valid URL: ${error.message}`);
+      errors.push(`Invalid DATABASE_URL format: ${error.message}`);
     }
-  } else {
-    const requiredParams = ['DB_NAME', 'DB_USER', 'DB_PASSWORD', 'DB_HOST', 'DB_PORT'];
-    requiredParams.forEach(param => {
-      if (!process.env[param]) {
-        errors.push(`Missing required environment variable: ${param}`);
-      }
-    });
+  }
+  
+  // Check local database parameters
+  if (!process.env.DATABASE_URL) {
+    if (!process.env.DB_HOST) errors.push('DB_HOST not set');
+    if (!process.env.DB_PORT) errors.push('DB_PORT not set');
+    if (!process.env.DB_NAME) errors.push('DB_NAME not set');
+    if (!process.env.DB_USER) errors.push('DB_USER not set');
+    if (!process.env.DB_PASSWORD) errors.push('DB_PASSWORD not set');
   }
   
   if (errors.length > 0) {
-    console.error("❌ Database configuration errors:");
-    errors.forEach(error => console.error(`  - ${error}`));
-    throw new Error("Database configuration validation failed");
+    throw new Error(`Connection parameter validation failed:\n${errors.join('\n')}`);
   }
   
-  console.log("✅ Database connection parameters validated successfully");
+  return true;
 };
 
-// Enhanced logging function for Railway debugging
-const getLoggingFunction = () => {
-  if (process.env.NODE_ENV === 'development' || process.env.DEBUG_DB === 'true') {
-    return (msg) => {
-      const timestamp = new Date().toISOString();
-      console.log(`🗄️  [DB] [${timestamp}] ${msg}`);
-    };
-  }
+// Connect to Railway PostgreSQL
+const connectToRailway = async () => {
+  console.log("🚂 Connecting to Railway PostgreSQL...");
   
-  // In production, log only errors and important events
-  if (process.env.NODE_ENV === 'production') {
-    return (msg) => {
-      if (msg.includes('ERROR') || msg.includes('error') || msg.includes('failed')) {
-        const timestamp = new Date().toISOString();
-        console.error(`🗄️  [DB] [${timestamp}] ${msg}`);
-      }
-    };
-  }
-  
-  return false;
-};
-
-// Enhanced Railway-optimized connection pool configuration
-const getPoolConfig = () => {
-  const poolConfig = {
-    max: parseInt(process.env.DB_POOL_MAX) || 3, // Reduced for Railway stability (Railway has connection limits)
-    min: parseInt(process.env.DB_POOL_MIN) || 0, // Start with 0 for Railway efficiency
-    acquire: parseInt(process.env.DB_POOL_ACQUIRE) || 180000, // Increased to 180s for Railway free tier wake-up
-    idle: parseInt(process.env.DB_POOL_IDLE) || 10000, // Increased idle time for Railway stability
-    evict: parseInt(process.env.DB_POOL_EVICT) || 1000,
-    // Additional Railway-specific pool options
-    handleDisconnects: true,
-    validate: (client) => {
-      // Validate connection before use
-      return client && !client._ending && !client._destroyed;
-    },
-    // Railway-specific optimizations with extended timeouts
-    createTimeoutMillis: 60000, // Increased to 60s for Railway free tier
-    destroyTimeoutMillis: 10000, // Increased destroy timeout
-    reapIntervalMillis: 2000, // Increased reap interval
-    createRetryIntervalMillis: 1000, // Increased retry interval
-    propagateCreateError: false,
-  };
-  
-  // Log pool configuration for debugging
-  console.log(`📊 Pool Configuration: max=${poolConfig.max}, min=${poolConfig.min}, acquire=${poolConfig.acquire}ms`);
-  
-  return poolConfig;
-};
-
-// Enhanced Railway-specific SSL configuration
-const getSSLConfig = () => {
-  // Check if using Railway (DATABASE_URL set) or production
-  const requiresSSL = process.env.DATABASE_URL || process.env.NODE_ENV === 'production';
-  
-  if (requiresSSL) {
-    // Railway PostgreSQL requires SSL connections
-    const sslConfig = {
-      require: true, // ✅ Required by Railway
-      rejectUnauthorized: false, // ✅ Prevents SSL certificate errors on Railway
-      // Additional Railway-specific SSL options
-      sslmode: 'require',
-      ssl: true,
-      // Enhanced SSL configuration for Railway
-      checkServerIdentity: () => true, // Function that always returns true
-      secureProtocol: 'TLSv1_2_method',
-    };
-    
-    // Log SSL configuration for debugging
-    console.log(`🔒 SSL Configuration: require=${sslConfig.require}, rejectUnauthorized=${sslConfig.rejectUnauthorized}, sslmode=${sslConfig.sslmode}`);
-    
-    return sslConfig;
-  } else {
-    // Local development - disable SSL
-    console.log(`🔒 SSL Configuration: disabled for local development`);
-    return false;
-  }
-};
-
-// Initialize database connection
-const initializeDatabase = () => {
   try {
-    validateConnectionParams();
-    
-    const poolConfig = getPoolConfig();
-    const sslConfig = getSSLConfig();
-    const logging = getLoggingFunction();
-    
-    console.log("🔧 Initializing database connection...");
-    console.log(`📊 Pool config: max=${poolConfig.max}, min=${poolConfig.min}`);
-    if (sslConfig) {
-      console.log(`🔒 SSL: required=${sslConfig.require}, rejectUnauthorized=${sslConfig.rejectUnauthorized}`);
-    } else {
-      console.log(`🔒 SSL: disabled`);
+    // Validate configuration
+    if (!process.env.DATABASE_URL) {
+      throw new Error("DATABASE_URL is required for Railway connection");
     }
-    
-    if (process.env.DATABASE_URL) {
-      // Railway DATABASE_URL format: postgresql://user:password@host:port/database
-      console.log("🚀 Using Railway DATABASE_URL for connection");
-      
-      sequelize = new Sequelize(process.env.DATABASE_URL, {
-        dialect: "postgres",
-        dialectOptions: {
-          ssl: sslConfig,
-          // Railway-specific connection options with extended timeouts
-          connectTimeout: 120000, // Increased to 120s for Railway free tier wake-up
-          requestTimeout: 120000, // Increased to 120s for Railway free tier wake-up
-          // Additional Railway optimizations
-          keepAlive: true,
-          keepAliveInitialDelayMillis: 0,
-          // Enhanced timeout handling for Railway
-          statement_timeout: 120000, // Increased statement timeout
-          idle_in_transaction_session_timeout: 120000, // Increased idle timeout
-          // Railway-specific connection parameters
-          application_name: 'railway-app',
-          // Additional Railway optimizations
-          binary: false,
-          parseInputDatesAsUTC: true,
-          // Railway-specific network optimizations
-          tcpKeepAlive: true,
-          tcpKeepAliveInitialDelayMillis: 0,
+
+    const railwayDB = new Sequelize(process.env.DATABASE_URL, {
+      dialect: "postgres",
+      dialectOptions: {
+        ssl: {
+          require: true,
+          rejectUnauthorized: false
         },
-        logging: logging,
-        pool: poolConfig,
-        // Enhanced Railway-specific connection options with robust retry logic
-        retry: {
-          max: 15, // Increased retry attempts for Railway free tier wake-up
-          match: [
-            /ConnectionError/,
-            /SequelizeConnectionError/,
-            /SequelizeConnectionRefusedError/,
-            /SequelizeHostNotFoundError/,
-            /SequelizeHostNotReachableError/,
-            /SequelizeInvalidConnectionError/,
-            /SequelizeConnectionTimedOutError/,
-            /timeout/,
-            /ECONNRESET/,
-            /ENOTFOUND/,
-            /ETIMEDOUT/,
-            /ECONNREFUSED/,
-            /SSL/,
-            /certificate/,
-            /Connection terminated/,
-            /Connection lost/,
-            /Connection closed/,
-            /Database is starting/,
-            /Database is sleeping/,
-          ],
-          backoffBase: 3000, // Increased base delay for Railway sleeping databases
-          backoffExponent: 1.8, // Slightly less aggressive exponential backoff
-        },
-        // Railway-specific query options
-        define: {
-          timestamps: true,
-          underscored: true,
-        },
-        // Additional Railway optimizations
-        benchmark: false,
-        queryType: 'SELECT',
-      });
-    } else {
-      // Individual environment variables fallback
-      console.log("🚀 Using individual environment variables for connection");
-      
-      sequelize = new Sequelize(
-        process.env.DB_NAME,
-        process.env.DB_USER,
-        process.env.DB_PASSWORD,
-        {
-          host: process.env.DB_HOST,
-          port: process.env.DB_PORT,
-          dialect: "postgres",
-          dialectOptions: {
-            ssl: sslConfig,
-            connectTimeout: 120000, // Increased to 120s for Railway compatibility
-            requestTimeout: 120000, // Increased to 120s for Railway compatibility
-            statement_timeout: 120000, // Increased statement timeout
-            idle_in_transaction_session_timeout: 120000, // Increased idle timeout
-            application_name: 'local-app',
-            binary: false,
-            parseInputDatesAsUTC: true,
-            // Railway-specific network optimizations
-            tcpKeepAlive: true,
-            tcpKeepAliveInitialDelayMillis: 0,
-          },
-          logging: logging,
-          pool: poolConfig,
-          retry: {
-            max: 15, // Increased retry attempts for Railway compatibility
-            match: [
-              /ConnectionError/,
-              /SequelizeConnectionError/,
-              /SequelizeConnectionRefusedError/,
-              /SequelizeHostNotFoundError/,
-              /SequelizeHostNotReachableError/,
-              /SequelizeInvalidConnectionError/,
-              /SequelizeConnectionTimedOutError/,
-              /timeout/,
-              /ECONNRESET/,
-              /ENOTFOUND/,
-              /ETIMEDOUT/,
-              /ECONNREFUSED/,
-              /SSL/,
-              /certificate/,
-              /Connection terminated/,
-              /Connection lost/,
-              /Connection closed/,
-              /Database is starting/,
-              /Database is sleeping/,
-            ],
-            backoffBase: 3000, // Increased base delay for Railway sleeping databases
-            backoffExponent: 1.8, // Slightly less aggressive exponential backoff
-          },
-          define: {
-            timestamps: true,
-            underscored: true,
-          },
-        }
-      );
-    }
+        connectTimeout: 10000, // Reduced to 10 seconds for faster fallback
+        keepAlive: true,
+      },
+      logging: process.env.NODE_ENV === 'development' ? console.log : false,
+      pool: {
+        max: parseInt(process.env.DB_POOL_MAX) || 5,
+        min: parseInt(process.env.DB_POOL_MIN) || 0,
+        acquire: parseInt(process.env.DB_POOL_ACQUIRE) || 10000, // Reduced to 10 seconds
+        idle: parseInt(process.env.DB_POOL_IDLE) || 10000,
+      },
+      retry: {
+        max: 2, // Reduced retries
+      }
+    });
+
+    // Add connection timeout wrapper - reduced to 10 seconds
+    const connectionTimeout = 10000; // 10 seconds for fast fallback
+    const authenticatePromise = railwayDB.authenticate();
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Connection timeout after 10 seconds')), connectionTimeout)
+    );
     
-    console.log("✅ Database connection initialized successfully");
-    return sequelize;
-    
+    await Promise.race([authenticatePromise, timeoutPromise]);
+    console.log("✅ Connected to Railway PostgreSQL");
+    return railwayDB;
   } catch (error) {
-    console.error("❌ Failed to initialize database connection:", error.message);
+    console.log(`❌ Railway connection failed: ${error.message}`);
     throw error;
   }
 };
 
-// Initialize the connection - this is synchronous and creates the sequelize instance
-// The actual connection will be tested in testConnection() which is called from app.js
-sequelize = initializeDatabase();
+// Connect to Local PostgreSQL (Primary)
+const connectToLocalPostgreSQL = async () => {
+  console.log("💻 Connecting to Local PostgreSQL...");
+  
+  try {
+    const localConfig = {
+      dialect: 'postgres',
+      host: process.env.DB_HOST || 'localhost',
+      port: parseInt(process.env.DB_PORT) || 5432,
+      database: process.env.DB_NAME || 'myapp',
+      username: process.env.DB_USER || 'postgres',
+      password: process.env.DB_PASSWORD || '',
+      logging: process.env.NODE_ENV === 'development' ? console.log : false,
+      pool: {
+        max: 5,
+        min: 0,
+        acquire: 5000, // Fast acquisition for local DB
+        idle: 10000
+      },
+      retry: {
+        max: 1, // Quick retry for local
+      }
+    };
 
-// Enhanced Railway-specific connection retry wrapper with extended timeout
-const connectWithRetry = async (operation, maxRetries = 10, baseDelay = 2000, timeoutMs = 180000) => {
+    const localDB = new Sequelize(localConfig);
+    
+    // Add connection timeout wrapper - local should be fast
+    const connectionTimeout = 5000; // 5 seconds for local DB
+    const authenticatePromise = localDB.authenticate();
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Local connection timeout after 5 seconds')), connectionTimeout)
+    );
+    
+    await Promise.race([authenticatePromise, timeoutPromise]);
+    console.log("✅ Connected to Local PostgreSQL");
+    return localDB;
+  } catch (error) {
+    console.log(`❌ Local PostgreSQL connection failed: ${error.message}`);
+    throw error;
+  }
+};
+
+// ==================== DATABASE INITIALIZATION ====================
+
+const initializeDatabase = async () => {
+  console.log("🎯 Initializing PostgreSQL Database...");
+  
+  // Try Local PostgreSQL first (fast), then Railway (may timeout quickly)
+  const connectionAttempts = [
+    { 
+      name: 'Local PostgreSQL', 
+      connect: connectToLocalPostgreSQL,
+      type: 'local'
+    },
+    { 
+      name: 'Railway PostgreSQL', 
+      connect: connectToRailway,
+      type: 'railway'
+    }
+  ];
+
+  for (const attempt of connectionAttempts) {
+    try {
+      console.log(`\n🔄 Attempting: ${attempt.name}...`);
+      const db = await attempt.connect();
+      
+      sequelize = db;
+      currentDatabaseType = attempt.type;
+      isConnected = true;
+      
+      console.log(`🎉 SUCCESS: Using ${attempt.name}`);
+      return sequelize;
+      
+    } catch (error) {
+      console.log(`❌ ${attempt.name} failed: ${error.message}`);
+      continue;
+    }
+  }
+
+  throw new Error("💥 Both Railway and Local PostgreSQL connections failed");
+};
+
+// ==================== DATABASE MANAGEMENT ====================
+
+// Get current active database
+const getCurrentDatabase = () => {
+  return sequelize;
+};
+
+// Connection health check
+const getConnectionHealth = async () => {
+  try {
+    if (!sequelize) {
+      return {
+        status: 'unhealthy',
+        database: currentDatabaseType,
+        isConnected: false,
+        error: 'Database not initialized',
+        timestamp: new Date().toISOString()
+      };
+    }
+    
+    const [results] = await sequelize.query('SELECT 1 as health_check');
+    
+    return {
+      status: 'healthy',
+      database: currentDatabaseType,
+      isConnected: true,
+      timestamp: new Date().toISOString()
+    };
+  } catch (error) {
+    return {
+      status: 'unhealthy',
+      database: currentDatabaseType,
+      isConnected: false,
+      error: error.message,
+      timestamp: new Date().toISOString()
+    };
+  }
+};
+
+// Get database status
+const getDatabaseStatus = () => {
+  return {
+    currentDatabase: currentDatabaseType,
+    isConnected: isConnected,
+    environment: process.env.NODE_ENV || 'development',
+    timestamp: new Date().toISOString()
+  };
+};
+
+// Smart connection with retry logic
+const connectWithRetry = async (operation, maxRetries = 3, baseDelay = 2000) => {
   let lastError;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      console.log(`🔄 Connection attempt ${attempt}/${maxRetries}...`);
-
-      // Check if connection manager is still open before attempting operation
-      if (sequelize && sequelize.connectionManager && sequelize.connectionManager.pool && sequelize.connectionManager.pool._closed) {
-        console.log(`⚠️  Connection pool is closed, skipping attempt ${attempt}`);
-        throw new Error('Connection pool is closed');
-      }
-
-      // Wrap the operation with a timeout (increased to 180 seconds for Railway free tier)
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Operation timed out')), timeoutMs);
-      });
-
-      const result = await Promise.race([operation(), timeoutPromise]);
-      console.log(`✅ Connection successful on attempt ${attempt}`);
+      console.log(`🔄 Database operation attempt ${attempt}/${maxRetries}...`);
+      const result = await operation(sequelize);
+      console.log(`✅ Operation successful on attempt ${attempt}`);
       return result;
     } catch (error) {
       lastError = error;
       console.error(`❌ Attempt ${attempt} failed: ${error.message}`);
 
-      // Check if this is a Railway-specific error that should trigger retry
-      const shouldRetry = error.message.includes('ETIMEDOUT') ||
-                         error.message.includes('ECONNRESET') ||
-                         error.message.includes('ECONNREFUSED') ||
-                         error.message.includes('timeout') ||
-                         error.message.includes('Connection terminated') ||
-                         error.message.includes('Connection lost') ||
-                         error.message.includes('Database is starting') ||
-                         error.message.includes('Database is sleeping') ||
-                         error.message.includes('SSL') ||
-                         error.message.includes('certificate') ||
-                         error.message.includes('Operation timed out') ||
-                         error.message.includes('ConnectionManager.getConnection was called after the connection manager was closed');
-
-      // Don't retry if connection manager is closed
-      if (error.message.includes('ConnectionManager.getConnection was called after the connection manager was closed')) {
-        console.error(`❌ Connection manager is closed, cannot retry`);
+      if (attempt === maxRetries) {
+        console.error(`❌ Max retries reached`);
         throw error;
       }
 
-      if (!shouldRetry || attempt === maxRetries) {
-        console.error(`❌ Max retries reached or non-retryable error`);
-        throw error;
-      }
-
-      // Calculate exponential backoff delay with increased delays for sleeping databases
-      const delay = Math.min(baseDelay * Math.pow(2, attempt - 1), 30000); // Cap at 30 seconds
+      const delay = Math.min(baseDelay * Math.pow(2, attempt - 1), 10000);
       console.log(`⏳ Waiting ${delay}ms before retry...`);
       await new Promise(resolve => setTimeout(resolve, delay));
     }
@@ -350,113 +248,227 @@ const connectWithRetry = async (operation, maxRetries = 10, baseDelay = 2000, ti
   throw lastError;
 };
 
-// Enhanced test connection function with detailed Railway debugging and retry logic
+// Enhanced test connection
 const testConnection = async (syncDatabase = false) => {
   try {
-    console.log("🔍 Testing database connection with Railway retry logic...");
+    console.log("🚀 Testing PostgreSQL database connection...");
     
-    // Test basic connection with retry
-    await connectWithRetry(async () => {
-      await sequelize.authenticate();
-      console.log("✅ PostgreSQL connection established successfully.");
-    });
+    // Initialize database
+    await initializeDatabase();
     
-    // Only sync if explicitly requested (and models are loaded)
+    const dbStatus = getDatabaseStatus();
+    console.log(`✅ Connected to: ${dbStatus.currentDatabase}`);
+    
+    // Sync if requested
     if (syncDatabase) {
-      await connectWithRetry(async () => {
-        await sequelize.sync({ alter: false });
-        console.log("✅ Database tables verified and ready.");
+      await connectWithRetry(async (db) => {
+        await db.sync({ alter: false });
+        console.log("✅ Database tables verified");
       });
     }
     
-    // Test pool status
-    const pool = sequelize.connectionManager.pool;
-    console.log(`📊 Connection pool status: ${pool.size} active, ${pool.available} available`);
-    
-    // Test a simple query with retry
-    const [results] = await connectWithRetry(async () => {
-      return await sequelize.query('SELECT NOW() as current_time');
+    // Test current database
+    await connectWithRetry(async (db) => {
+      const [results] = await db.query('SELECT 1 as test_query');
+      console.log(`✅ Test query successful with ${currentDatabaseType}`);
     });
-    console.log(`⏰ Database time: ${results[0].current_time}`);
     
-    console.log("🎉 Database connection test completed successfully!");
+    console.log(`🎉 Database setup complete: ${dbStatus.currentDatabase}`);
     
   } catch (error) {
-    console.error("❌ Database connection error:");
-    console.error(`   Error Type: ${error.constructor.name}`);
-    console.error(`   Error Message: ${error.message}`);
-    console.error(`   Error Code: ${error.code || 'N/A'}`);
-    
-    // Railway-specific error handling
-    if (error.message.includes('SSL')) {
-      console.error("🔒 SSL Error detected - check Railway SSL configuration");
-      console.error("   Try adding ?ssl=require to your DATABASE_URL");
-    }
-    if (error.message.includes('timeout') || error.message.includes('ETIMEDOUT')) {
-      console.error("⏱️  Timeout Error - Railway database may be sleeping (free tier)");
-      console.error("   Wait 30-60 seconds and try again");
-    }
-    if (error.message.includes('ENOTFOUND')) {
-      console.error("🌐 DNS Error - check Railway DATABASE_URL hostname");
-      console.error("   Verify DATABASE_URL format: postgresql://user:pass@host:port/db");
-    }
-    if (error.message.includes('ECONNREFUSED')) {
-      console.error("🚫 Connection Refused - Railway database service may be down");
-      console.error("   Check Railway dashboard for service status");
-    }
-    
+    console.error("❌ Database connection failed:", error.message);
     throw error;
   }
 };
 
-// Connection health check function for Railway monitoring
-const getConnectionHealth = async () => {
-  try {
-    const pool = sequelize.connectionManager.pool;
-    const [results] = await sequelize.query('SELECT 1 as health_check');
-    
-    return {
-      status: 'healthy',
-      pool: {
-        size: pool.size,
-        available: pool.available,
-        max: pool.max,
-        min: pool.min
-      },
-      database: {
-        connected: true,
-        response_time: Date.now()
-      }
-    };
-  } catch (error) {
-    return {
-      status: 'unhealthy',
-      error: error.message,
-      timestamp: new Date().toISOString()
-    };
-  }
-};
-
-// Graceful shutdown function for Railway
+// Graceful shutdown
 const closeConnection = async () => {
   try {
     console.log("🔄 Closing database connection...");
-    await sequelize.close();
-    console.log("✅ Database connection closed successfully");
+    
+    if (sequelize) {
+      await sequelize.close();
+      console.log("✅ Database connection closed");
+      isConnected = false;
+    }
+    
   } catch (error) {
     console.error("❌ Error closing database connection:", error.message);
   }
 };
 
-// Handle Railway shutdown signals - REMOVED to prevent conflicts with server.js handlers
-// process.on('SIGTERM', closeConnection);
-// process.on('SIGINT', closeConnection);
+// Manual control functions
+const switchToRailway = async () => {
+  try {
+    console.log('🔄 Switching to Railway PostgreSQL...');
+    const railwayDB = await connectToRailway();
+    
+    if (sequelize) {
+      await sequelize.close();
+    }
+    
+    sequelize = railwayDB;
+    currentDatabaseType = 'railway';
+    console.log('✅ Successfully switched to Railway PostgreSQL');
+    return true;
+  } catch (error) {
+    console.log('❌ Failed to switch to Railway');
+    return false;
+  }
+};
+
+const switchToLocal = async () => {
+  try {
+    console.log('🔄 Switching to Local PostgreSQL...');
+    const localDB = await connectToLocalPostgreSQL();
+    
+    if (sequelize) {
+      await sequelize.close();
+    }
+    
+    sequelize = localDB;
+    currentDatabaseType = 'local';
+    console.log('✅ Successfully switched to Local PostgreSQL');
+    return true;
+  } catch (error) {
+    console.log('❌ Failed to switch to Local PostgreSQL');
+    return false;
+  }
+};
+
+// ==================== INITIALIZATION ====================
+
+// Initialize database immediately
+let dbInitialized = false;
+const initializeAsync = async () => {
+  try {
+    await initializeDatabase();
+    dbInitialized = true;
+    console.log("✅ Database initialized successfully");
+  } catch (error) {
+    console.error("❌ Database initialization failed:", error.message);
+    // Don't throw here - let the app start and handle connections lazily
+  }
+};
+
+// Start initialization
+initializeAsync();
+
+// ==================== EXPORTS ====================
+
+// Safe sequelize proxy that handles initialization
+const createSequelizeProxy = () => {
+  return {
+    // Proxy that waits for initialization
+    authenticate: async () => {
+      if (!dbInitialized) {
+        await initializeAsync();
+      }
+      if (!sequelize) {
+        throw new Error('Database not initialized');
+      }
+      return sequelize.authenticate();
+    },
+    
+    // Delegate all other methods with safe initialization
+    query: async (...args) => {
+      if (!dbInitialized) {
+        await initializeAsync();
+      }
+      if (!sequelize) {
+        throw new Error('Database not initialized');
+      }
+      return sequelize.query(...args);
+    },
+    
+    sync: async (...args) => {
+      if (!dbInitialized) {
+        await initializeAsync();
+      }
+      if (!sequelize) {
+        throw new Error('Database not initialized');
+      }
+      return sequelize.sync(...args);
+    },
+    
+    define: (...args) => {
+      // This is safe to call immediately - it just defines the model
+      // The actual database operations will happen later
+      if (!sequelize) {
+        console.log('⚠️ Sequelize not initialized yet, but defining model...');
+        // Return a function that will be called when sequelize is available
+        return (actualSequelize) => actualSequelize.define(...args);
+      }
+      return sequelize.define(...args);
+    },
+    
+    close: async (...args) => {
+      if (!sequelize) {
+        console.log('⚠️ No database connection to close');
+        return;
+      }
+      return sequelize.close(...args);
+    },
+    
+    // Add transaction support
+    transaction: async (...args) => {
+      if (!dbInitialized) {
+        await initializeAsync();
+      }
+      if (!sequelize) {
+        throw new Error('Database not initialized');
+      }
+      return sequelize.transaction(...args);
+    },
+    
+    // Add other Sequelize methods as needed
+    model: (...args) => {
+      if (!sequelize) {
+        throw new Error('Database not initialized');
+      }
+      return sequelize.model(...args);
+    },
+    
+    isDefined: (...args) => {
+      if (!sequelize) return false;
+      return sequelize.isDefined(...args);
+    }
+  };
+};
 
 module.exports = { 
-  sequelize, 
+  // Main export - the actual Sequelize instance that models need
+  sequelize: createSequelizeProxy(),
+  
+  // Direct access to sequelize (use with caution)
+  getSequelize: () => {
+    if (!sequelize) {
+      throw new Error('Database not initialized. Use testConnection() first.');
+    }
+    return sequelize;
+  },
+  
+  // Connection management
   testConnection, 
   getConnectionHealth, 
   closeConnection,
   validateConnectionParams,
-  connectWithRetry // Export the retry function for use in other modules
+  
+  // Status and monitoring
+  getDatabaseStatus,
+  
+  // Manual control
+  switchToRailway,
+  switchToLocal,
+  
+  // Utilities
+  connectWithRetry,
+  
+  // Info
+  getCurrentDatabase: () => sequelize,
+  getDatabaseType: () => currentDatabaseType,
+  isConnected: () => isConnected,
+  
+  // Initialization status
+  isInitialized: () => dbInitialized
 };
