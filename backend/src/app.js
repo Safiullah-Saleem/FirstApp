@@ -31,13 +31,12 @@ const app = express();
 // ✅ Track database initialization status
 let dbInitialized = false;
 
-// ✅ FIXED CORS Configuration
+// ✅ ENHANCED CORS Configuration for Railway
 app.use(
   cors({
     origin: [
-      "https://stock-wala-03.web.app",  // ✅ No slash
-      "http://localhost:5173",
-      "https://stock-wala-18d368b9d7e6.herokuapp.com"  // ✅ Add Heroku URL
+      "https://stock-wala-03.web.app/",
+      "http://localhost:5173"
     ],
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
@@ -259,5 +258,67 @@ app.use((req, res) => {
   });
 });
 
-// ✅ CRITICAL: Export ONLY the Express app (no server startup)
 module.exports = app;
+
+// ✅ IMPROVED SERVER STARTUP - Only start if not in test environment
+if (require.main === module && process.env.NODE_ENV !== "test") {
+  const PORT = process.env.PORT || 8000;
+  const HOST = "0.0.0.0";
+
+  const server = app.listen(PORT, HOST, () => {
+    console.log(`🚀 Server running on http://${HOST}:${PORT}`);
+    console.log(`📊 Environment: ${process.env.NODE_ENV || "development"}`);
+    console.log("✅ All routes loaded and application is ready");
+    console.log(`📍 Billing API: http://${HOST}:${PORT}/api/billing`);
+    console.log(
+      `🌐 Public URL: https://devoted-education-production.up.railway.app`
+    );
+    console.log(
+      `🔍 Health check: https://devoted-education-production.up.railway.app/health`
+    );
+  });
+
+  // ✅ ENHANCED Graceful shutdown for Railway
+  const gracefulShutdown = async (signal) => {
+    console.log(`🛑 Received ${signal}, shutting down gracefully...`);
+    
+    server.close(async (err) => {
+      if (err) {
+        console.error("❌ Error during shutdown:", err);
+        process.exit(1);
+      }
+      console.log("✅ HTTP server closed successfully");
+
+      // Close database connections properly
+      try {
+        const { closeConnection } = require("./config/database");
+        await closeConnection();
+      } catch (closeError) {
+        console.error("❌ Error closing database connection:", closeError.message);
+      }
+
+      console.log("👋 Shutdown completed");
+      process.exit(0);
+    });
+
+    // Force close after 10 seconds
+    setTimeout(() => {
+      console.log("💥 Forcing shutdown after timeout");
+      process.exit(1);
+    }, 10000);
+  };
+
+  process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+  process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+
+  // Handle uncaught exceptions
+  process.on("uncaughtException", (error) => {
+    console.error("💥 Uncaught Exception:", error);
+    gracefulShutdown("UNCAUGHT_EXCEPTION");
+  });
+
+  process.on("unhandledRejection", (reason, promise) => {
+    console.error("💥 Unhandled Rejection at:", promise, "reason:", reason);
+    gracefulShutdown("UNHANDLED_REJECTION");
+  });
+}
