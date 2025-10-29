@@ -1397,6 +1397,7 @@ const deleteItem = async (req, res) => {
 
 
 // ✅ NEW: Process Sale endpoint for all tracking types
+// ✅ NEW: Process Sale endpoint for all tracking types - COMPLETE FIX
 const processSale = async (req, res) => {
   try {
     console.log("=== PROCESS SALE WITH TRACKING ===");
@@ -1417,7 +1418,7 @@ const processSale = async (req, res) => {
 
     console.log("🔍 Looking for item:", { itemId, companyCode });
 
-    // **DIRECT LOOKUP - Bypass all safeFindItem issues**
+    // **COMPLETE DIRECT LOOKUP - No safeFindItem at all**
     let item;
     try {
       // Try numeric ID first (this is what you're using - 39, 40, etc.)
@@ -1513,10 +1514,23 @@ const processSale = async (req, res) => {
       });
 
     } else {
-      // **STANDARD TRACKING - Use the existing function**
-      console.log("🔄 Processing sale with STANDARD TRACKING");
-      const options = { batchId, imeiNumbers, sizeVariant };
-      updatedItem = await updateItemQuantityAfterSale(itemId, companyCode, quantity, options);
+      // **STANDARD TRACKING - Use SIMPLE quantity reduction to avoid updateItemQuantityAfterSale**
+      console.log("🔄 Processing sale with SIMPLE TRACKING");
+      
+      // Simple quantity reduction for all other cases
+      const newQuantity = Math.max(0, item.quantity - quantity);
+      await item.update({ 
+        quantity: newQuantity
+      });
+      
+      updatedItem = await Item.findOne({
+        where: { id: item.id, company_code: companyCode }
+      });
+      
+      console.log("✅ Simple tracking update complete:", {
+        oldQuantity: item.quantity,
+        newQuantity: updatedItem.quantity
+      });
     }
     
     res.json({

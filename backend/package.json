@@ -1,7 +1,6 @@
 {
-  "name": "stock-wala-backend",
+  "name": "backend",
   "version": "1.0.0",
-  "description": "Backend API for Stock Wala inventory management system",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -10,41 +9,28 @@
     "test-db": "node test-db-connection.js",
     "migrate": "node migrate-database.js",
     "db:check": "node test-db-connection.js",
+    "db:debug": "node debug-railway-db.js",
     "db:reset": "node migrate-database.js --force",
-    "heroku:test": "node test-db-connection.js",
-    "heroku:migrate": "node migrate-database.js",
-    "heroku:logs": "heroku logs --tail -a stock-wala",
-    "heroku:config": "heroku config -a stock-wala",
-    "deploy": "git add . && git commit -m 'Deploy to Heroku' && git push heroku main"
+    "railway:test": "NODE_ENV=production node test-db-connection.js",
+    "railway:migrate": "NODE_ENV=production node migrate-database.js"
   },
-  "keywords": [
-    "inventory",
-    "management",
-    "api",
-    "backend",
-    "postgresql",
-    "heroku"
-  ],
-  "author": "Your Name",
+  "keywords": [],
+  "author": "",
   "license": "ISC",
-  "engines": {
-    "node": "18.x",
-    "npm": "9.x"
-  },
+  "description": "",
   "dependencies": {
-    "bcryptjs": "^2.4.3",
-    "body-parser": "^1.20.2",
+    "bcryptjs": "^3.0.2",
+    "body-parser": "^2.2.0",
     "cors": "^2.8.5",
-    "dotenv": "^16.3.1",
+    "dotenv": "^17.2.2",
     "express": "^4.18.2",
-    "imagekit": "^4.1.1",
+    "imagekit": "^6.0.0",
     "jsonwebtoken": "^9.0.2",
-    "multer": "^1.4.5-lts.1",
-    "pg": "^8.11.3",
-    "pg-hstore": "^2.3.4",
-    "sequelize": "^6.32.1"
+    "multer": "^2.0.2",
+    "pg": "^8.16.3",
+    "sequelize": "^6.37.7"
   },
   "devDependencies": {
-    "nodemon": "^3.0.1"
+    "nodemon": "^3.1.10"
   }
 }
