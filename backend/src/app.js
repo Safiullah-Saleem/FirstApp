@@ -35,7 +35,7 @@ let dbInitialized = false;
 app.use(
   cors({
     origin: [
-      "https://stock-wala-03.web.app/",
+      "https://stockwala-frontend-f5ps.vercel.app",
       "http://localhost:5173"
     ],
     credentials: true,
