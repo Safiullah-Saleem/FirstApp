@@ -1,7 +1,8 @@
 /**
- * PostgreSQL Database Migration Script
+ * Railway-Optimized Database Migration Script
  * 
- * This script handles database migrations for PostgreSQL (Railway or Local)
+ * This script handles database migrations with comprehensive error handling,
+ * Railway-specific optimizations, and detailed logging for debugging.
  * 
  * Usage: 
  *   node migrate-database.js
@@ -9,18 +10,23 @@
  */
 
 require('dotenv').config();
+const Purchase = require('./src/billing/purchase.model');
+const Sale = require('./src/billing/sale.model');
+const Bill = require('./src/billing/bill.model');
+const Item = require('./src/items/item.model');
+const User = require('./src/user/user.model');
+const Employee = require('./src/employees/employee.model');
+const BankAccount = require('./src/bank/bank.account.model');
+const BankTransaction = require('./src/bank/bank.transaction.model');
+const CashAccount = require('./src/cash/cash.account.model');
+const CashTransaction = require('./src/cash/cash.transaction.model');
+const LedgerAccount = require('./src/ledger/ledger.account.model');
+const LedgerTransaction = require('./src/ledger/ledger.transaction.model');
+const { sequelize, testConnection, getConnectionHealth, connectWithRetry } = require('./src/config/database');
 
-// ✅ FIX: Add Sequelize operators to prevent "Op is undefined" error
-const { Op } = require('sequelize');
-// Make it available globally for all models
-global.Op = Op;
-
-// Function to create ledger_transactions table
+// ✅ ADDED: Function to create ledger_transactions table
 const createLedgerTransactionsTable = async () => {
   try {
-    const { getSequelize } = require('./src/config/database');
-    const sequelize = getSequelize();
-    
     console.log("🔄 Creating ledger_transactions table...");
     
     // Check if table already exists
@@ -75,64 +81,44 @@ const createLedgerTransactionsTable = async () => {
   }
 };
 
+// Enhanced migration function with Railway-specific error handling
 async function migrateWithModel() {
   const startTime = Date.now();
+  const initialMemory = process.memoryUsage();
   
   try {
-    console.log("🚀 Starting PostgreSQL Database Migration...");
-    console.log("===========================================");
+    console.log("🚀 Starting Railway Database Migration...");
     console.log(`📅 Started at: ${new Date().toISOString()}`);
     console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(`🔗 Database URL: ${process.env.DATABASE_URL ? '✅ Set' : '❌ Not set'}`);
     console.log(`🏠 Database Host: ${process.env.DB_HOST || 'Not set'}`);
     console.log('');
 
-    // Step 1: First initialize database connection
-    console.log("🔧 Step 1: Initializing database connection...");
-    const { testConnection, getConnectionHealth, connectWithRetry, getDatabaseStatus } = require('./src/config/database');
-    
-    await testConnection(false);
-    
-    const dbStatus = getDatabaseStatus();
-    console.log(`✅ Connected to: ${dbStatus.currentDatabase}`);
+    // Step 1: Test database connection with comprehensive checks and retry logic
+    console.log("🔍 Step 1: Testing database connection with Railway retry logic...");
+    await connectWithRetry(async () => {
+      await sequelize.authenticate();
+      console.log("✅ PostgreSQL connection established successfully.");
+    }, 10, 3000); // 10 retries with 3s base delay for Railway free tier
+    console.log("✅ Database connection verified");
     console.log('');
 
-    // Step 2: Check connection health
-    console.log("💚 Step 2: Checking connection health...");
-    const health = await getConnectionHealth();
-    
-    if (health.status !== 'healthy') {
-      throw new Error(`Database health check failed: ${health.error}`);
-    }
+    // Step 2: Check connection health with retry logic
+    console.log("💚 Step 2: Checking connection health with retry logic...");
+    const health = await connectWithRetry(async () => {
+      const healthCheck = await getConnectionHealth();
+      if (healthCheck.status !== 'healthy') {
+        throw new Error(`Database health check failed: ${healthCheck.error}`);
+      }
+      return healthCheck;
+    }, 5, 2000); // 5 retries with 2s base delay
     
     console.log("✅ Database health check passed");
+    console.log(`📊 Pool status: ${health.pool.size}/${health.pool.max} connections`);
     console.log('');
 
-    // Step 3: Now import models AFTER database is connected
-    console.log("📦 Step 3: Loading models...");
-    const Purchase = require('./src/billing/purchase.model');
-    const Sale = require('./src/billing/sale.model');
-    const Bill = require('./src/billing/bill.model');
-    const Item = require('./src/items/item.model');
-    const User = require('./src/user/user.model');
-    const Employee = require('./src/employees/employee.model');
-    const BankAccount = require('./src/bank/bank.account.model');
-    const BankTransaction = require('./src/bank/bank.transaction.model');
-    const CashAccount = require('./src/cash/cash.account.model');
-    const CashTransaction = require('./src/cash/cash.transaction.model');
-    const LedgerAccount = require('./src/ledger/ledger.account.model');
-    const LedgerTransaction = require('./src/ledger/ledger.transaction.model');
-    
-    console.log("✅ All models loaded successfully");
-    console.log('');
-
-    // Get sequelize instance after models are loaded
-    const { getSequelize } = require('./src/config/database');
-    const sequelize = getSequelize();
-
-    // Step 4: Sync all models
-    console.log("🔄 Step 4: Syncing all models...");
-    
+    // Step 3: Sync all models with enhanced error handling and retry logic
+    console.log("🔄 Step 3: Syncing all models with Railway retry logic...");
     // Order models to ensure dependencies are created first
     const models = [
       User,           // Base user model
@@ -149,59 +135,63 @@ async function migrateWithModel() {
       LedgerTransaction // Depends on LedgerAccount, User
     ];
 
-    for (const model of models) {
-      try {
-        await connectWithRetry(async () => {
+    // Sync all models in a single retry operation to avoid connection conflicts
+    await connectWithRetry(async () => {
+      for (const model of models) {
+        try {
           await model.sync({
             force: false, // Never force in production
             alter: true // Allow alter to fix schema issues
           });
-        }, 2, 1000);
-        
-        console.log(`✅ ${model.name} table synced successfully`);
-      } catch (syncError) {
-        console.error(`❌ ${model.name} table sync failed:`, syncError.message);
+          console.log(`✅ ${model.name} table synced successfully`);
+        } catch (syncError) {
+          console.error(`❌ ${model.name} table sync failed:`, syncError.message);
 
-        // Handle specific errors
-        if (syncError.message.includes('SSL')) {
-          console.log("⚠️ SSL error - continuing with current database");
-        } else if (syncError.message.includes('timeout') || syncError.message.includes('ETIMEDOUT')) {
-          console.log("⚠️ Timeout error - continuing with current database");
-        } else if (syncError.message.includes('permission')) {
-          throw new Error("Permission denied - check database user permissions");
-        } else {
-          // For other errors, log but continue
-          console.log(`⚠️ Continuing despite ${model.name} sync error`);
+          // Railway-specific error handling
+          if (syncError.message.includes('SSL')) {
+            throw new Error("SSL connection error - check Railway SSL configuration");
+          }
+          if (syncError.message.includes('timeout') || syncError.message.includes('ETIMEDOUT')) {
+            throw new Error("Connection timeout - Railway database may be sleeping (free tier)");
+          }
+          if (syncError.message.includes('permission')) {
+            throw new Error("Permission denied - check database user permissions");
+          }
+
+          throw syncError;
         }
       }
-    }
+    }, 5, 2000); // 5 retries with 2s base delay for all models
     console.log('');
 
-    // Step 5: Create ledger_transactions table
-    console.log("🔄 Step 5: Creating ledger_transactions table...");
+    // ✅ ADDED: Step 3.5 - Create ledger_transactions table
+    console.log("🔄 Step 3.5: Creating ledger_transactions table...");
     await connectWithRetry(async () => {
       await createLedgerTransactionsTable();
-    }, 2, 1000);
+    }, 3, 1000); // 3 retries with 1s base delay
     console.log('');
 
-    // Step 6: Check existing data
-    console.log("📊 Step 6: Checking existing data...");
+    // Step 4: Check existing data and insert sample data if needed
+    console.log("📊 Step 4: Checking existing data...");
     let existingPurchases = 0;
     
     try {
       existingPurchases = await connectWithRetry(async () => {
-        return await Purchase.count();
-      }, 2, 1000);
-      console.log(`📈 Found ${existingPurchases} existing purchases`);
+        return await Purchase.count({
+          where: { 
+            ledger_id: '92abf1fd-b16a-4661-8791-5814fc29b11e' 
+          }
+        });
+      }, 5, 2000); // 5 retries with 2s base delay
+      console.log(`📈 Found ${existingPurchases} existing purchases for ledger`);
     } catch (countError) {
-      console.log("ℹ️ No existing purchases found or error counting");
-      existingPurchases = 0;
+      console.error("❌ Error counting existing purchases after retries:", countError.message);
+      throw new Error(`Failed to count existing data: ${countError.message}`);
     }
     console.log('');
 
-    // Step 7: Insert sample data if database is empty
     if (existingPurchases === 0) {
-      console.log("📝 Step 7: Inserting sample data...");
+      console.log("📝 Step 5: Inserting sample purchase data...");
       
       const sampleData = [
         {
@@ -249,95 +239,110 @@ async function migrateWithModel() {
       ];
       
       try {
+        // Insert all sample data in a single retry operation to avoid connection conflicts
         let insertedCount = 0;
         const totalCount = sampleData.length;
         
         console.log(`   Inserting ${totalCount} sample records...`);
         
-        for (const data of sampleData) {
-          try {
-            await connectWithRetry(async () => {
+        await connectWithRetry(async () => {
+          for (const data of sampleData) {
+            try {
               await Purchase.create(data);
-            }, 2, 1000);
-            
-            insertedCount++;
-            console.log(`   ✅ [${insertedCount}/${totalCount}] ${data.name}`);
-          } catch (itemError) {
-            console.error(`   ❌ Failed to insert: ${data.name}`, itemError.message);
-            // Continue with other records
+              insertedCount++;
+              console.log(`   ✅ [${insertedCount}/${totalCount}] ${data.name}`);
+            } catch (itemError) {
+              console.error(`   ❌ Failed to insert: ${data.name}`, itemError.message);
+              // Continue with other records even if one fails
+            }
           }
-        }
+        }, 3, 1000); // 3 retries with 1s base delay for all records
         
         console.log(`✅ ${insertedCount}/${totalCount} sample records inserted successfully`);
         
       } catch (insertError) {
         console.error("❌ Error inserting sample data:", insertError.message);
         
+        // Railway-specific error handling for data insertion
         if (insertError.message.includes('duplicate')) {
           console.log("ℹ️  Data already exists, skipping insertion");
+        } else if (insertError.message.includes('constraint')) {
+          throw new Error("Database constraint violation - check data format");
+        } else if (insertError.message.includes('timeout') || insertError.message.includes('ETIMEDOUT')) {
+          throw new Error("Insert operation timed out - Railway database may be sleeping (free tier)");
         } else {
-          console.log("⚠️  Continuing despite sample data insertion error");
+          throw insertError;
         }
       }
     } else {
-      console.log(`✅ Data already exists: ${existingPurchases} purchases found`);
+      console.log(`✅ Sample data already exists: ${existingPurchases} purchases found`);
       console.log("ℹ️  Skipping sample data insertion");
     }
     console.log('');
 
-    // Step 8: Final verification
-    console.log("🔍 Step 8: Final verification...");
+    // Step 6: Final verification with retry logic
+    console.log("🔍 Step 6: Final verification with Railway retry logic...");
     try {
-      const finalCount = await connectWithRetry(async () => {
-        return await Purchase.count();
-      }, 2, 1000);
-      
-      console.log(`📊 Total purchases in database: ${finalCount}`);
-      
-      // Test a simple query
-      const testQuery = await connectWithRetry(async () => {
-        return await Purchase.findOne({
+      // Perform all verification queries in a single retry operation
+      const verificationResults = await connectWithRetry(async () => {
+        const finalCount = await Purchase.count();
+        console.log(`📊 Total purchases in database: ${finalCount}`);
+        
+        // Test a simple query to ensure everything works
+        const testQuery = await Purchase.findOne({
+          where: { company_code: '2370' },
           attributes: ['id', 'name', 'total_price', 'created_at'],
           order: [['created_at', 'DESC']]
         });
-      }, 2, 1000);
-      
-      if (testQuery) {
-        console.log(`✅ Test query successful: Found purchase "${testQuery.name}" ($${testQuery.total_price})`);
-      } else {
-        console.log("⚠️  No test data found, but migration completed");
-      }
+        
+        if (testQuery) {
+          console.log(`✅ Test query successful: Found purchase "${testQuery.name}" ($${testQuery.total_price})`);
+        } else {
+          console.log("⚠️  No test data found, but migration completed");
+        }
 
-      // Verify ledger_transactions table exists
-      const ledgerTableCheck = await sequelize.query(`
-        SELECT COUNT(*) as table_count 
-        FROM information_schema.tables 
-        WHERE table_schema = 'public' 
-        AND table_name = 'ledger_transactions'
-      `, { type: sequelize.QueryTypes.SELECT });
-      
-      if (ledgerTableCheck[0].table_count > 0) {
-        console.log("✅ ledger_transactions table verified");
-      } else {
-        console.log("❌ ledger_transactions table not found");
-      }
+        // Verify sample data structure
+        const sampleCheck = await Purchase.findOne({
+          where: { ledger_id: '92abf1fd-b16a-4661-8791-5814fc29b11e' },
+          attributes: ['id', 'name', 'total_price', 'paid', 'date']
+        });
+        
+        if (sampleCheck) {
+          console.log(`✅ Sample data verified: "${sampleCheck.name}" from ${sampleCheck.date}`);
+        }
+
+        // ✅ ADDED: Verify ledger_transactions table exists
+        const ledgerTableCheck = await sequelize.query(`
+          SELECT COUNT(*) as table_count 
+          FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'ledger_transactions'
+        `, { type: sequelize.QueryTypes.SELECT });
+        
+        if (ledgerTableCheck[0].table_count > 0) {
+          console.log("✅ ledger_transactions table verified");
+        } else {
+          console.log("❌ ledger_transactions table not found");
+        }
+        
+        return { finalCount, testQuery, sampleCheck };
+      }, 5, 2000); // 5 retries with 2s base delay
       
     } catch (verifyError) {
-      console.error("❌ Final verification failed:", verifyError.message);
-      console.log("⚠️  Continuing despite verification issues");
+      console.error("❌ Final verification failed after retries:", verifyError.message);
+      throw new Error(`Migration verification failed: ${verifyError.message}`);
     }
 
     const endTime = Date.now();
     const duration = ((endTime - startTime) / 1000).toFixed(2);
+    const finalMemory = process.memoryUsage();
+    const memoryUsed = ((finalMemory.heapUsed - initialMemory.heapUsed) / 1024 / 1024).toFixed(2);
     
     console.log('');
     console.log("🎉 Migration completed successfully!");
-    console.log("===================================");
     console.log(`⏱️  Total time: ${duration} seconds`);
-    console.log(`💾 Database: ${dbStatus.currentDatabase}`);
+    console.log(`🧠 Memory used: ${memoryUsed} MB`);
     console.log(`📅 Completed at: ${new Date().toISOString()}`);
-    
-    return { success: true, duration, database: dbStatus.currentDatabase };
     
   } catch (error) {
     const endTime = Date.now();
@@ -345,101 +350,98 @@ async function migrateWithModel() {
     
     console.error('');
     console.error("❌ Migration failed!");
-    console.error("===================");
     console.error(`⏱️  Failed after: ${duration} seconds`);
     console.error(`📅 Failed at: ${new Date().toISOString()}`);
     console.error(`🔍 Error Type: ${error.constructor.name}`);
     console.error(`💬 Error Message: ${error.message}`);
     
-    // PostgreSQL-specific error diagnostics
-    try {
-      const { getDatabaseStatus } = require('./src/config/database');
-      const dbStatus = getDatabaseStatus();
-      console.error(`💾 Current Database: ${dbStatus.currentDatabase}`);
-    } catch (e) {
-      console.error(`💾 Database Status: Unknown (${e.message})`);
-    }
-    
+    // Railway-specific error diagnostics
     if (error.message.includes('SSL')) {
       console.error('');
       console.error("🔒 SSL Error Diagnostics:");
-      console.error("  - Railway requires SSL connections");
-      console.error("  - Check DATABASE_URL format");
-      console.error("  - Verify SSL configuration");
+      console.error("  - Check Railway DATABASE_URL format");
+      console.error("  - Verify SSL configuration in database.js");
+      console.error("  - Ensure Railway PostgreSQL is running");
+      console.error("  - Try adding ?ssl=require to DATABASE_URL");
     }
     
     if (error.message.includes('timeout') || error.message.includes('ETIMEDOUT')) {
       console.error('');
       console.error("⏱️  Timeout Error Diagnostics:");
-      console.error("  - Railway database may be sleeping (free tier)");
-      console.error("  - Check Railway dashboard for database status");
+      console.error("  - Railway database may be sleeping (free tier limitation)");
       console.error("  - Wait 30-60 seconds and try again");
+      console.error("  - Check Railway dashboard for database service status");
+      console.error("  - Verify connection pool settings");
+      console.error("  - Consider upgrading Railway plan if hitting limits");
     }
     
     if (error.message.includes('ENOTFOUND') || error.message.includes('ECONNREFUSED')) {
       console.error('');
       console.error("🌐 Connection Error Diagnostics:");
-      console.error("  - Network connectivity issues");
-      console.error("  - Check if Railway database is running");
-      console.error("  - Verify DATABASE_URL hostname and port");
+      console.error("  - Verify Railway DATABASE_URL hostname");
+      console.error("  - Check Railway database service status");
+      console.error("  - Ensure database is not sleeping");
+      console.error("  - Check network connectivity to Railway");
     }
 
     if (error.message.includes('auth') || error.message.includes('password')) {
       console.error('');
       console.error("🔑 Authentication Error Diagnostics:");
-      console.error("  - Database credentials issue");
-      console.error("  - Verify DATABASE_URL username and password");
+      console.error("  - Verify DATABASE_URL credentials");
       console.error("  - Check Railway environment variables");
+      console.error("  - Ensure database user has proper permissions");
     }
     
     throw error;
   } finally {
-    console.log("🔒 Database connection managed by PostgreSQL system");
+    // Always close the database connection
+    try {
+      await sequelize.close();
+      console.log("🔒 Database connection closed gracefully");
+    } catch (closeError) {
+      console.log("⚠️  Error closing connection:", closeError.message);
+    }
   }
 }
 
-// Script execution
+// Enhanced script execution with Railway-specific error handling
 if (require.main === module) {
-  console.log("🚀 PostgreSQL Database Migration");
-  console.log("================================");
-  console.log("🎯 Strategy: Railway → Local PostgreSQL");
+  console.log("🚀 Railway Database Migration Script");
+  console.log("=====================================");
   console.log('');
   
   migrateWithModel()
-    .then((result) => {
+    .then(() => {
       console.log('');
-      console.log("✅ Migration completed successfully!");
+      console.log("✅ Migration script completed successfully!");
       console.log("🎯 Next steps:");
-      console.log(`  1. Current database: ${result.database}`);
-      console.log("  2. Verify your application can connect to the database");
-      console.log("  3. Test your API endpoints");
-      console.log("  4. Run your application with: npm start");
-      
-      if (result.database === 'local') {
-        console.log("");
-        console.log("💡 Tip: Using Local PostgreSQL.");
-        console.log("     To use Railway, ensure DATABASE_URL is correct and Railway is running.");
-      }
-      
+      console.log("  1. Verify your application can connect to the database");
+      console.log("  2. Test your API endpoints");
+      console.log("  3. Check Railway logs for any issues");
+      console.log("  4. Monitor database performance in Railway dashboard");
+      console.log("  5. Run your application with: npm start");
       process.exit(0);
     })
     .catch((error) => {
       console.log('');
-      console.error("❌ Migration failed!");
+      console.error("❌ Migration script failed!");
       console.error('');
       console.error("🔧 Troubleshooting steps:");
       console.error("  1. Check Railway database service status");
       console.error("  2. Verify DATABASE_URL environment variable");
-      console.error("  3. Check if local PostgreSQL is running (if using local)");
-      console.error("  4. Review error messages above");
+      console.error("  3. Check Railway logs for detailed error information");
+      console.error("  4. Ensure database is not sleeping (Railway free tier)");
+      console.error("  5. Verify SSL configuration");
+      console.error("  6. Check database user permissions");
       console.error('');
-      console.error("💡 Our system automatically tries:");
-      console.error("  - Railway PostgreSQL first (production)");
-      console.error("  - Local PostgreSQL second (development)");
+      console.error("📞 For Railway-specific issues:");
+      console.error("  - Check Railway dashboard for service status");
+      console.error("  - Review Railway logs in the dashboard");
+      console.error("  - Verify environment variables are set correctly");
+      console.error("  - Restart Railway services if needed");
       console.error('');
       process.exit(1);
     });
 }
 
-// ✅ FIXED: Properly export both functions
 module.exports = { migrateWithModel, createLedgerTransactionsTable };
