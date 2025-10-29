@@ -76,20 +76,21 @@ const initializeDatabaseAsync = async () => {
       const models = require('./models/index.js');
       console.log("✅ Models loaded and associations set up successfully");
 
-      // ✅ Mark database as initialized BEFORE sync to reduce wait time
-      dbInitialized = true;
-      console.log("🎉 Database is ready to handle requests! (pre-sync)");
-
       // Sync database with models loaded - handle errors gracefully
-      console.log("🔄 Syncing database in background...");
+      console.log("🔄 Syncing database...");
       const { sequelize } = require('./config/database');
-      sequelize.sync({ alter: false }).then(() => {
+      try {
+        await sequelize.sync({ alter: false });
         console.log("✅ Database tables synced successfully");
-      }).catch((syncError) => {
+      } catch (syncError) {
         console.warn("⚠️  Database sync warning:", syncError.message);
         console.log("ℹ️  Database tables might already exist or have schema differences");
         console.log("ℹ️  Continuing without sync - existing tables will be used");
-      });
+      }
+
+      // ✅ Mark database as initialized
+      dbInitialized = true;
+      console.log("🎉 Database is ready to handle requests!");
 
       // ✅ Mount routes only after DB and models are ready to avoid circular-load issues
       if (!routesMounted) {
