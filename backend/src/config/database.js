@@ -136,8 +136,19 @@ const connectToLocalPostgreSQL = async () => {
 const initializeDatabase = async () => {
   console.log("🎯 Initializing PostgreSQL Database...");
   
-  // Try Local PostgreSQL first (fast), then Railway (may timeout quickly)
-  const connectionAttempts = [
+  // Prefer DATABASE_URL (Heroku/Railway) first if available, else try local first
+  const connectionAttempts = process.env.DATABASE_URL ? [
+    { 
+      name: 'Railway PostgreSQL', 
+      connect: connectToRailway,
+      type: 'railway'
+    },
+    { 
+      name: 'Local PostgreSQL', 
+      connect: connectToLocalPostgreSQL,
+      type: 'local'
+    }
+  ] : [
     { 
       name: 'Local PostgreSQL', 
       connect: connectToLocalPostgreSQL,
