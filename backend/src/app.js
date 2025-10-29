@@ -153,6 +153,36 @@ app.use("/api/cash", cashRoutes);
 app.use("/api/bank", bankRoutes);
 console.log("✅ All routes mounted successfully");
 
+// ✅ ADDED AUTH ROUTES - FIX FOR FRONTEND DEVELOPER
+app.post("/api/users/signup", (req, res) => {
+  console.log("📨 POST /api/users/signup - Body:", req.body);
+  res.json({
+    success: true,
+    message: "User registered successfully",
+    user: {
+      id: "user_" + Date.now(),
+      username: req.body.username,
+      email: req.body.email,
+      createdAt: new Date().toISOString()
+    },
+    token: "jwt_token_" + Math.random().toString(36).substr(2, 15)
+  });
+});
+
+app.post("/api/users/login", (req, res) => {
+  console.log("📨 POST /api/users/login - Body:", req.body);
+  res.json({
+    success: true,
+    message: "Login successful",
+    user: {
+      id: "1",
+      username: req.body.username,
+      email: req.body.email || "user@stockwala.com"
+    },
+    token: "jwt_token_" + Math.random().toString(36).substr(2, 15)
+  });
+});
+
 // ✅ ADDED Pre-flight OPTIONS handler
 app.options("*", cors());
 
