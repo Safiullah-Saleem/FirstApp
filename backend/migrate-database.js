@@ -1,7 +1,7 @@
 /**
- * PostgreSQL Database Migration Script
+ * PostgreSQL Database Migration Script for Heroku
  * 
- * This script handles database migrations for PostgreSQL (Railway or Local)
+ * This script handles database migrations for PostgreSQL (Heroku or Local)
  * 
  * Usage: 
  *   node migrate-database.js
@@ -10,17 +10,14 @@
 
 require('dotenv').config();
 
-// ✅ FIX: Add Sequelize operators to prevent "Op is undefined" error
+// ✅ Add Sequelize operators to prevent "Op is undefined" error
 const { Op } = require('sequelize');
 // Make it available globally for all models
 global.Op = Op;
 
 // Function to create ledger_transactions table
-const createLedgerTransactionsTable = async () => {
+const createLedgerTransactionsTable = async (sequelize) => {
   try {
-    const { getSequelize } = require('./src/config/database');
-    const sequelize = getSequelize();
-    
     console.log("🔄 Creating ledger_transactions table...");
     
     // Check if table already exists
@@ -75,123 +72,170 @@ const createLedgerTransactionsTable = async () => {
   }
 };
 
-async function migrateWithModel() {
+// Simple database connection for migration
+const createMigrationConnection = async () => {
+  console.log("🔧 Creating migration database connection...");
+  
+  const { Sequelize } = require('sequelize');
+  
+  // Use Heroku DATABASE_URL if available, otherwise local
+  if (process.env.DATABASE_URL) {
+    console.log("🚀 Using Heroku PostgreSQL...");
+    return new Sequelize(process.env.DATABASE_URL, {
+      dialect: 'postgres',
+      dialectOptions: {
+        ssl: {
+          require: true,
+          rejectUnauthorized: false
+        }
+      },
+      logging: console.log,
+      pool: {
+        max: 5,
+        min: 0,
+        acquire: 30000,
+        idle: 10000
+      }
+    });
+  } else {
+    console.log("💻 Using Local PostgreSQL...");
+    return new Sequelize({
+      dialect: 'postgres',
+      host: process.env.DB_HOST || 'localhost',
+      port: parseInt(process.env.DB_PORT) || 5432,
+      database: process.env.DB_NAME || 'myapp',
+      username: process.env.DB_USER || 'postgres',
+      password: process.env.DB_PASSWORD || '',
+      logging: console.log,
+      pool: {
+        max: 5,
+        min: 0,
+        acquire: 30000,
+        idle: 10000
+      }
+    });
+  }
+};
+
+async function migrateDatabase() {
   const startTime = Date.now();
+  let sequelize = null;
   
   try {
-    console.log("🚀 Starting PostgreSQL Database Migration...");
-    console.log("===========================================");
+    console.log("🚀 Starting Heroku PostgreSQL Database Migration...");
+    console.log("===================================================");
     console.log(`📅 Started at: ${new Date().toISOString()}`);
     console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(`🔗 Database URL: ${process.env.DATABASE_URL ? '✅ Set' : '❌ Not set'}`);
     console.log(`🏠 Database Host: ${process.env.DB_HOST || 'Not set'}`);
     console.log('');
 
-    // Step 1: First initialize database connection
-    console.log("🔧 Step 1: Initializing database connection...");
-    const { testConnection, getConnectionHealth, connectWithRetry, getDatabaseStatus } = require('./src/config/database');
+    // Step 1: Create database connection
+    console.log("🔧 Step 1: Creating database connection...");
+    sequelize = await createMigrationConnection();
     
-    await testConnection(false);
-    
-    const dbStatus = getDatabaseStatus();
-    console.log(`✅ Connected to: ${dbStatus.currentDatabase}`);
+    // Test connection
+    await sequelize.authenticate();
+    console.log("✅ Database connection established");
     console.log('');
 
-    // Step 2: Check connection health
-    console.log("💚 Step 2: Checking connection health...");
-    const health = await getConnectionHealth();
+    // Step 2: Load and sync models
+    console.log("📦 Step 2: Loading and syncing models...");
     
-    if (health.status !== 'healthy') {
-      throw new Error(`Database health check failed: ${health.error}`);
-    }
-    
-    console.log("✅ Database health check passed");
-    console.log('');
-
-    // Step 3: Now import models AFTER database is connected
-    console.log("📦 Step 3: Loading models...");
-    const Purchase = require('./src/billing/purchase.model');
-    const Sale = require('./src/billing/sale.model');
-    const Bill = require('./src/billing/bill.model');
-    const Item = require('./src/items/item.model');
-    const User = require('./src/user/user.model');
-    const Employee = require('./src/employees/employee.model');
-    const BankAccount = require('./src/bank/bank.account.model');
-    const BankTransaction = require('./src/bank/bank.transaction.model');
-    const CashAccount = require('./src/cash/cash.account.model');
-    const CashTransaction = require('./src/cash/cash.transaction.model');
-    const LedgerAccount = require('./src/ledger/ledger.account.model');
-    const LedgerTransaction = require('./src/ledger/ledger.transaction.model');
-    
-    console.log("✅ All models loaded successfully");
-    console.log('');
-
-    // Get sequelize instance after models are loaded
-    const { getSequelize } = require('./src/config/database');
-    const sequelize = getSequelize();
-
-    // Step 4: Sync all models
-    console.log("🔄 Step 4: Syncing all models...");
-    
-    // Order models to ensure dependencies are created first
+    // Define models directly for migration (simplified)
     const models = [
-      User,           // Base user model
-      Employee,       // Depends on User
-      Item,           // Independent
-      BankAccount,    // Independent
-      CashAccount,    // Independent  
-      LedgerAccount,  // Independent
-      Bill,           // Depends on User, Item
-      Sale,           // Depends on User, Item
-      Purchase,       // Depends on User, Item
-      BankTransaction, // Depends on BankAccount, User, Sale
-      CashTransaction, // Depends on CashAccount, User
-      LedgerTransaction // Depends on LedgerAccount, User
+      // User model
+      sequelize.define('User', {
+        id: { type: Sequelize.INTEGER, primaryKey: true, autoIncrement: true },
+        username: { type: Sequelize.STRING, allowNull: false },
+        email: { type: Sequelize.STRING, allowNull: false },
+        password: { type: Sequelize.STRING, allowNull: false },
+        company_code: { type: Sequelize.STRING(10), allowNull: false },
+        created_at: { type: Sequelize.BIGINT, allowNull: false }
+      }, { tableName: 'users', timestamps: false }),
+
+      // Employee model
+      sequelize.define('Employee', {
+        id: { type: Sequelize.INTEGER, primaryKey: true, autoIncrement: true },
+        user_id: { type: Sequelize.INTEGER, allowNull: false },
+        name: { type: Sequelize.STRING, allowNull: false },
+        position: { type: Sequelize.STRING, allowNull: false },
+        company_code: { type: Sequelize.STRING(10), allowNull: false },
+        created_at: { type: Sequelize.BIGINT, allowNull: false }
+      }, { tableName: 'employees', timestamps: false }),
+
+      // Item model
+      sequelize.define('Item', {
+        id: { type: Sequelize.INTEGER, primaryKey: true, autoIncrement: true },
+        name: { type: Sequelize.STRING, allowNull: false },
+        price: { type: Sequelize.DECIMAL(10,2), allowNull: false },
+        stock: { type: Sequelize.INTEGER, defaultValue: 0 },
+        company_code: { type: Sequelize.STRING(10), allowNull: false },
+        created_at: { type: Sequelize.BIGINT, allowNull: false }
+      }, { tableName: 'items', timestamps: false }),
+
+      // Purchase model
+      sequelize.define('Purchase', {
+        id: { type: Sequelize.INTEGER, primaryKey: true, autoIncrement: true },
+        company_code: { type: Sequelize.STRING(10), allowNull: false },
+        ledger_id: { type: Sequelize.UUID, allowNull: false },
+        name: { type: Sequelize.STRING, allowNull: false },
+        total_price: { type: Sequelize.DECIMAL(15,2), defaultValue: 0.00 },
+        paid: { type: Sequelize.DECIMAL(15,2), defaultValue: 0.00 },
+        date: { type: Sequelize.DATE, allowNull: false },
+        item_id: { type: Sequelize.STRING, allowNull: false },
+        purchase_price: { type: Sequelize.DECIMAL(15,2), defaultValue: 0.00 },
+        quantity: { type: Sequelize.INTEGER, defaultValue: 1 },
+        timestamp: { type: Sequelize.BIGINT, allowNull: false },
+        created_at: { type: Sequelize.BIGINT, allowNull: false },
+        modified_at: { type: Sequelize.BIGINT, allowNull: false }
+      }, { tableName: 'purchases', timestamps: false }),
+
+      // Sale model
+      sequelize.define('Sale', {
+        id: { type: Sequelize.INTEGER, primaryKey: true, autoIncrement: true },
+        company_code: { type: Sequelize.STRING(10), allowNull: false },
+        total_amount: { type: Sequelize.DECIMAL(15,2), defaultValue: 0.00 },
+        paid_amount: { type: Sequelize.DECIMAL(15,2), defaultValue: 0.00 },
+        date: { type: Sequelize.DATE, allowNull: false },
+        created_at: { type: Sequelize.BIGINT, allowNull: false }
+      }, { tableName: 'sales', timestamps: false }),
+
+      // Ledger Account model
+      sequelize.define('LedgerAccount', {
+        id: { type: Sequelize.UUID, primaryKey: true, defaultValue: Sequelize.UUIDV4 },
+        name: { type: Sequelize.STRING, allowNull: false },
+        type: { type: Sequelize.STRING, allowNull: false },
+        company_code: { type: Sequelize.STRING(10), allowNull: false },
+        balance: { type: Sequelize.DECIMAL(15,2), defaultValue: 0.00 },
+        created_at: { type: Sequelize.BIGINT, allowNull: false }
+      }, { tableName: 'ledger_accounts', timestamps: false })
     ];
 
+    // Sync all models
     for (const model of models) {
       try {
-        await connectWithRetry(async () => {
-          await model.sync({
-            force: false, // Never force in production
-            alter: true // Allow alter to fix schema issues
-          });
-        }, 2, 1000);
-        
+        await model.sync({ force: false, alter: true });
         console.log(`✅ ${model.name} table synced successfully`);
       } catch (syncError) {
         console.error(`❌ ${model.name} table sync failed:`, syncError.message);
-
-        // Handle specific errors
-        if (syncError.message.includes('SSL')) {
-          console.log("⚠️ SSL error - continuing with current database");
-        } else if (syncError.message.includes('timeout') || syncError.message.includes('ETIMEDOUT')) {
-          console.log("⚠️ Timeout error - continuing with current database");
-        } else if (syncError.message.includes('permission')) {
-          throw new Error("Permission denied - check database user permissions");
-        } else {
-          // For other errors, log but continue
-          console.log(`⚠️ Continuing despite ${model.name} sync error`);
-        }
+        // Continue with other models
       }
     }
     console.log('');
 
-    // Step 5: Create ledger_transactions table
-    console.log("🔄 Step 5: Creating ledger_transactions table...");
-    await connectWithRetry(async () => {
-      await createLedgerTransactionsTable();
-    }, 2, 1000);
+    // Step 3: Create ledger_transactions table
+    console.log("🔄 Step 3: Creating ledger_transactions table...");
+    await createLedgerTransactionsTable(sequelize);
     console.log('');
 
-    // Step 6: Check existing data
-    console.log("📊 Step 6: Checking existing data...");
+    // Step 4: Check existing data
+    console.log("📊 Step 4: Checking existing data...");
+    const Purchase = models[3]; // Purchase model
     let existingPurchases = 0;
     
     try {
-      existingPurchases = await connectWithRetry(async () => {
-        return await Purchase.count();
-      }, 2, 1000);
+      existingPurchases = await Purchase.count();
       console.log(`📈 Found ${existingPurchases} existing purchases`);
     } catch (countError) {
       console.log("ℹ️ No existing purchases found or error counting");
@@ -199,9 +243,9 @@ async function migrateWithModel() {
     }
     console.log('');
 
-    // Step 7: Insert sample data if database is empty
+    // Step 5: Insert sample data if database is empty
     if (existingPurchases === 0) {
-      console.log("📝 Step 7: Inserting sample data...");
+      console.log("📝 Step 5: Inserting sample data...");
       
       const sampleData = [
         {
@@ -256,10 +300,7 @@ async function migrateWithModel() {
         
         for (const data of sampleData) {
           try {
-            await connectWithRetry(async () => {
-              await Purchase.create(data);
-            }, 2, 1000);
-            
+            await Purchase.create(data);
             insertedCount++;
             console.log(`   ✅ [${insertedCount}/${totalCount}] ${data.name}`);
           } catch (itemError) {
@@ -272,12 +313,7 @@ async function migrateWithModel() {
         
       } catch (insertError) {
         console.error("❌ Error inserting sample data:", insertError.message);
-        
-        if (insertError.message.includes('duplicate')) {
-          console.log("ℹ️  Data already exists, skipping insertion");
-        } else {
-          console.log("⚠️  Continuing despite sample data insertion error");
-        }
+        console.log("⚠️  Continuing despite sample data insertion error");
       }
     } else {
       console.log(`✅ Data already exists: ${existingPurchases} purchases found`);
@@ -285,22 +321,17 @@ async function migrateWithModel() {
     }
     console.log('');
 
-    // Step 8: Final verification
-    console.log("🔍 Step 8: Final verification...");
+    // Step 6: Final verification
+    console.log("🔍 Step 6: Final verification...");
     try {
-      const finalCount = await connectWithRetry(async () => {
-        return await Purchase.count();
-      }, 2, 1000);
-      
+      const finalCount = await Purchase.count();
       console.log(`📊 Total purchases in database: ${finalCount}`);
       
       // Test a simple query
-      const testQuery = await connectWithRetry(async () => {
-        return await Purchase.findOne({
-          attributes: ['id', 'name', 'total_price', 'created_at'],
-          order: [['created_at', 'DESC']]
-        });
-      }, 2, 1000);
+      const testQuery = await Purchase.findOne({
+        attributes: ['id', 'name', 'total_price', 'created_at'],
+        order: [['created_at', 'DESC']]
+      });
       
       if (testQuery) {
         console.log(`✅ Test query successful: Found purchase "${testQuery.name}" ($${testQuery.total_price})`);
@@ -334,10 +365,10 @@ async function migrateWithModel() {
     console.log("🎉 Migration completed successfully!");
     console.log("===================================");
     console.log(`⏱️  Total time: ${duration} seconds`);
-    console.log(`💾 Database: ${dbStatus.currentDatabase}`);
+    console.log(`💾 Database: ${process.env.DATABASE_URL ? 'Heroku' : 'Local'}`);
     console.log(`📅 Completed at: ${new Date().toISOString()}`);
     
-    return { success: true, duration, database: dbStatus.currentDatabase };
+    return { success: true, duration, database: process.env.DATABASE_URL ? 'heroku' : 'local' };
     
   } catch (error) {
     const endTime = Date.now();
@@ -351,61 +382,38 @@ async function migrateWithModel() {
     console.error(`🔍 Error Type: ${error.constructor.name}`);
     console.error(`💬 Error Message: ${error.message}`);
     
-    // PostgreSQL-specific error diagnostics
-    try {
-      const { getDatabaseStatus } = require('./src/config/database');
-      const dbStatus = getDatabaseStatus();
-      console.error(`💾 Current Database: ${dbStatus.currentDatabase}`);
-    } catch (e) {
-      console.error(`💾 Database Status: Unknown (${e.message})`);
-    }
-    
     if (error.message.includes('SSL')) {
       console.error('');
       console.error("🔒 SSL Error Diagnostics:");
-      console.error("  - Railway requires SSL connections");
+      console.error("  - Heroku requires SSL connections");
       console.error("  - Check DATABASE_URL format");
-      console.error("  - Verify SSL configuration");
     }
     
     if (error.message.includes('timeout') || error.message.includes('ETIMEDOUT')) {
       console.error('');
       console.error("⏱️  Timeout Error Diagnostics:");
-      console.error("  - Railway database may be sleeping (free tier)");
-      console.error("  - Check Railway dashboard for database status");
+      console.error("  - Heroku database may be busy");
       console.error("  - Wait 30-60 seconds and try again");
-    }
-    
-    if (error.message.includes('ENOTFOUND') || error.message.includes('ECONNREFUSED')) {
-      console.error('');
-      console.error("🌐 Connection Error Diagnostics:");
-      console.error("  - Network connectivity issues");
-      console.error("  - Check if Railway database is running");
-      console.error("  - Verify DATABASE_URL hostname and port");
-    }
-
-    if (error.message.includes('auth') || error.message.includes('password')) {
-      console.error('');
-      console.error("🔑 Authentication Error Diagnostics:");
-      console.error("  - Database credentials issue");
-      console.error("  - Verify DATABASE_URL username and password");
-      console.error("  - Check Railway environment variables");
     }
     
     throw error;
   } finally {
-    console.log("🔒 Database connection managed by PostgreSQL system");
+    // Close connection
+    if (sequelize) {
+      await sequelize.close();
+      console.log("🔒 Database connection closed");
+    }
   }
 }
 
 // Script execution
 if (require.main === module) {
-  console.log("🚀 PostgreSQL Database Migration");
-  console.log("================================");
-  console.log("🎯 Strategy: Railway → Local PostgreSQL");
+  console.log("🚀 Heroku PostgreSQL Database Migration");
+  console.log("=======================================");
+  console.log("🎯 Strategy: Heroku → Local PostgreSQL");
   console.log('');
   
-  migrateWithModel()
+  migrateDatabase()
     .then((result) => {
       console.log('');
       console.log("✅ Migration completed successfully!");
@@ -418,7 +426,7 @@ if (require.main === module) {
       if (result.database === 'local') {
         console.log("");
         console.log("💡 Tip: Using Local PostgreSQL.");
-        console.log("     To use Railway, ensure DATABASE_URL is correct and Railway is running.");
+        console.log("     To use Heroku, ensure DATABASE_URL is set in Heroku config vars.");
       }
       
       process.exit(0);
@@ -428,18 +436,13 @@ if (require.main === module) {
       console.error("❌ Migration failed!");
       console.error('');
       console.error("🔧 Troubleshooting steps:");
-      console.error("  1. Check Railway database service status");
-      console.error("  2. Verify DATABASE_URL environment variable");
+      console.error("  1. Check Heroku database addon status");
+      console.error("  2. Verify DATABASE_URL environment variable in Heroku");
       console.error("  3. Check if local PostgreSQL is running (if using local)");
       console.error("  4. Review error messages above");
-      console.error('');
-      console.error("💡 Our system automatically tries:");
-      console.error("  - Railway PostgreSQL first (production)");
-      console.error("  - Local PostgreSQL second (development)");
       console.error('');
       process.exit(1);
     });
 }
 
-// ✅ FIXED: Properly export both functions
-module.exports = { migrateWithModel, createLedgerTransactionsTable };
+module.exports = { migrateDatabase, createLedgerTransactionsTable };

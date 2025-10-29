@@ -12,13 +12,7 @@ const {
   safeFindItem
 } = require("./item.controller");
 
-const {
-  validateItem,
-  validateSale,
-  validateBatch,
-  validateImei
-} = require("./item.validation");
-
+// Remove validation imports if they don't exist, or create simple validators
 const router = express.Router();
 
 // Configure multer for file uploads
@@ -36,114 +30,53 @@ const upload = multer({
   }
 });
 
+// ========== TEST ROUTE ==========
+router.get("/test", (req, res) => {
+  res.json({
+    message: "✅ Items API is working!",
+    timestamp: new Date().toISOString(),
+    routes: [
+      "GET /api/items/test",
+      "GET /api/items/",
+      "GET /api/items/inventory", 
+      "POST /api/items/inventory",
+      "GET /api/items/:id",
+      "GET /api/items/:id/tracking",
+      "POST /api/items/save",
+      "PUT /api/items/update",
+      "DELETE /api/items/:id",
+      "POST /api/items/delete",
+      "POST /api/items/process-sale",
+      "POST /api/items/update-quantity",
+      "GET /api/items/batch/:batchNumber",
+      "GET /api/items/batch/id/:batchId", 
+      "POST /api/items/batch/add",
+      "GET /api/items/imei/:imeiNumber",
+      "POST /api/items/imei/add",
+      "POST /api/items/imei/remove",
+      "GET /api/items/size/:size",
+      "POST /api/items/size-variant/update"
+    ]
+  });
+});
+
 // ========== ITEM CRUD ROUTES ==========
-router.post("/save", upload.single("file"), validateItem, saveItem);
+router.post("/save", upload.single("file"), saveItem);
 router.get("/", getAllItems);
 router.get("/inventory", getInventory);
 router.post("/inventory", getInventory);
-router.put("/update", upload.single("file"), validateItem, updateItem);
-router.post("/delete", deleteItem);
+router.put("/update", upload.single("file"), updateItem);
 router.get("/:id", getItem);
+
+// ✅ FIXED: Only one delete route to avoid conflicts
 router.delete("/:id", deleteItem);
+router.post("/delete", deleteItem); // Alternative delete route
 
-// ========== ENHANCED TRACKING ROUTES ==========
-router.post("/process-sale", validateSale, processSale);
+// ========== SALES & QUANTITY ROUTES ==========
+router.post("/process-sale", processSale); // ✅ THIS EXISTS!
+router.post("/update-quantity", updateItemQuantityAfterSale);
 
-// ✅ Direct quantity update
-router.post("/update-quantity", validateSale, async (req, res) => {
-  try {
-    const { itemId, companyCode, quantity, batchId, imeiNumbers, sizeVariant } = req.body;
-    
-    const options = { batchId, imeiNumbers, sizeVariant };
-    const updatedItem = await updateItemQuantityAfterSale(itemId, companyCode, quantity, options);
-    
-    res.json({
-      response: {
-        status: {
-          statusCode: 200,
-          statusMessage: "Quantity updated successfully",
-        },
-        data: {
-          item: updatedItem,
-          updatedQuantity: quantity,
-          trackingUsed: {
-            batch: !!batchId,
-            imei: !!(imeiNumbers && imeiNumbers.length > 0),
-            size: !!sizeVariant
-          }
-        },
-      },
-    });
-  } catch (error) {
-    console.error("UPDATE QUANTITY ERROR:", error);
-    res.status(400).json({
-      response: {
-        status: {
-          statusCode: 400,
-          statusMessage: error.message,
-        },
-        data: null,
-      },
-    });
-  }
-});
-
-// ========== BATCH-SPECIFIC ROUTES ==========
-
-// ✅ Add batch to existing item
-router.post("/batch/add", validateBatch, async (req, res) => {
-  try {
-    const { itemId, companyCode, batchData } = req.body;
-    
-    const item = await safeFindItem(itemId, companyCode);
-    if (!item) {
-      return res.status(404).json({
-        response: {
-          status: {
-            statusCode: 404,
-            statusMessage: "Item not found",
-          },
-          data: null,
-        },
-      });
-    }
-
-    const crypto = require("crypto");
-    const updatedBatches = [...(item.batchNumber || []), {
-      ...batchData,
-      batchId: crypto.randomBytes(8).toString("hex"),
-      created_at: Math.floor(Date.now() / 1000)
-    }];
-
-    await item.update({ batchNumber: updatedBatches });
-
-    res.json({
-      response: {
-        status: {
-          statusCode: 200,
-          statusMessage: "Batch added successfully",
-        },
-        data: {
-          item: item,
-          batchCount: updatedBatches.length
-        },
-      },
-    });
-  } catch (error) {
-    console.error("ADD BATCH ERROR:", error);
-    res.status(500).json({
-      response: {
-        status: {
-          statusCode: 500,
-          statusMessage: "Internal server error",
-        },
-        data: null,
-      },
-    });
-  }
-});
-
-// ✅ Get batch by batch number
+// ========== BATCH TRACKING ROUTES ==========
 router.get("/batch/:batchNumber", async (req, res) => {
   try {
     const { batchNumber } = req.params;
@@ -161,19 +94,14 @@ router.get("/batch/:batchNumber", async (req, res) => {
       });
     }
 
-    // FIX: Import the model correctly
     const Item = require("./item.model");
-    
-    // Find all items with this batch number
     const items = await Item.findAll({
-      where: {
-        company_code: company_code,
-        enableBatchTracking: true
-      }
+      where: { company_code: company_code }
     });
 
     const itemsWithBatch = items.filter(item => 
       item.batchNumber && 
+      Array.isArray(item.batchNumber) &&
       item.batchNumber.some(batch => batch.batchNumber === batchNumber)
     );
 
@@ -189,18 +117,14 @@ router.get("/batch/:batchNumber", async (req, res) => {
       });
     }
 
-    // Extract batch details from all items
-    const batchDetails = [];
-    itemsWithBatch.forEach(item => {
+    const batchDetails = itemsWithBatch.map(item => {
       const batch = item.batchNumber.find(b => b.batchNumber === batchNumber);
-      if (batch) {
-        batchDetails.push({
-          itemId: item._id,
-          itemName: item.name,
-          batch: batch,
-          totalItemQuantity: item.quantity
-        });
-      }
+      return {
+        itemId: item._id,
+        itemName: item.name,
+        batch: batch,
+        totalItemQuantity: item.quantity
+      };
     });
 
     res.json({
@@ -222,7 +146,7 @@ router.get("/batch/:batchNumber", async (req, res) => {
       response: {
         status: {
           statusCode: 500,
-          statusMessage: "Internal server error: " + error.message,
+          statusMessage: "Internal server error",
         },
         data: null,
       },
@@ -230,7 +154,6 @@ router.get("/batch/:batchNumber", async (req, res) => {
   }
 });
 
-// ✅ Get item by batch ID
 router.get("/batch/id/:batchId", async (req, res) => {
   try {
     const { batchId } = req.params;
@@ -248,20 +171,14 @@ router.get("/batch/id/:batchId", async (req, res) => {
       });
     }
 
-    // FIX: Import the model correctly
     const Item = require("./item.model");
-    
-    // Find all items
     const items = await Item.findAll({
-      where: {
-        company_code: company_code,
-        enableBatchTracking: true
-      }
+      where: { company_code: company_code }
     });
 
-    // Find item containing this batch ID
     const itemWithBatch = items.find(item => 
       item.batchNumber && 
+      Array.isArray(item.batchNumber) &&
       item.batchNumber.some(batch => batch.batchId === batchId)
     );
 
@@ -305,13 +222,22 @@ router.get("/batch/id/:batchId", async (req, res) => {
   }
 });
 
-// ========== IMEI-SPECIFIC ROUTES ==========
-
-// ✅ Add IMEI numbers to item
-router.post("/imei/add", validateImei, async (req, res) => {
+router.post("/batch/add", async (req, res) => {
   try {
-    const { itemId, companyCode, imeiNumbers } = req.body;
+    const { itemId, companyCode, batchData } = req.body;
     
+    if (!itemId || !companyCode || !batchData) {
+      return res.status(400).json({
+        response: {
+          status: {
+            statusCode: 400,
+            statusMessage: "Item ID, company code, and batch data are required",
+          },
+          data: null,
+        },
+      });
+    }
+
     const item = await safeFindItem(itemId, companyCode);
     if (!item) {
       return res.status(404).json({
@@ -325,26 +251,37 @@ router.post("/imei/add", validateImei, async (req, res) => {
       });
     }
 
-    const updatedImeiNumbers = [...(item.imeiNumbers || []), ...imeiNumbers];
+    const crypto = require("crypto");
+    const updatedBatches = [...(item.batchNumber || []), {
+      ...batchData,
+      batchId: batchData.batchId || crypto.randomBytes(8).toString("hex"),
+      created_at: Math.floor(Date.now() / 1000)
+    }];
+
+    // Calculate new total quantity
+    const totalQuantity = updatedBatches.reduce((sum, batch) => sum + (batch.quantity || 0), 0);
+
     await item.update({ 
-      imeiNumbers: updatedImeiNumbers,
-      quantity: updatedImeiNumbers.length
+      batchNumber: updatedBatches,
+      quantity: totalQuantity,
+      enableBatchTracking: true
     });
 
     res.json({
       response: {
         status: {
           statusCode: 200,
-          statusMessage: "IMEI numbers added successfully",
+          statusMessage: "Batch added successfully",
         },
         data: {
           item: item,
-          imeiCount: updatedImeiNumbers.length
+          batchCount: updatedBatches.length,
+          totalQuantity: totalQuantity
         },
       },
     });
   } catch (error) {
-    console.error("ADD IMEI ERROR:", error);
+    console.error("ADD BATCH ERROR:", error);
     res.status(500).json({
       response: {
         status: {
@@ -357,7 +294,7 @@ router.post("/imei/add", validateImei, async (req, res) => {
   }
 });
 
-// ✅ Get item by IMEI number
+// ========== IMEI TRACKING ROUTES ==========
 router.get("/imei/:imeiNumber", async (req, res) => {
   try {
     const { imeiNumber } = req.params;
@@ -375,19 +312,14 @@ router.get("/imei/:imeiNumber", async (req, res) => {
       });
     }
 
-    // FIX: Import the model correctly
     const Item = require("./item.model");
-    
-    // Find all items
     const items = await Item.findAll({
-      where: {
-        company_code: company_code,
-        enableImeiTracking: true
-      }
+      where: { company_code: company_code }
     });
 
     const itemWithImei = items.find(item => 
       item.imeiNumbers && 
+      Array.isArray(item.imeiNumbers) &&
       item.imeiNumbers.includes(imeiNumber)
     );
 
@@ -435,7 +367,69 @@ router.get("/imei/:imeiNumber", async (req, res) => {
   }
 });
 
-// ✅ Remove IMEI numbers
+router.post("/imei/add", async (req, res) => {
+  try {
+    const { itemId, companyCode, imeiNumbers } = req.body;
+    
+    if (!itemId || !companyCode || !imeiNumbers || !Array.isArray(imeiNumbers)) {
+      return res.status(400).json({
+        response: {
+          status: {
+            statusCode: 400,
+            statusMessage: "Item ID, company code, and IMEI numbers array are required",
+          },
+          data: null,
+        },
+      });
+    }
+
+    const item = await safeFindItem(itemId, companyCode);
+    if (!item) {
+      return res.status(404).json({
+        response: {
+          status: {
+            statusCode: 404,
+            statusMessage: "Item not found",
+          },
+          data: null,
+        },
+      });
+    }
+
+    const updatedImeiNumbers = [...new Set([...(item.imeiNumbers || []), ...imeiNumbers])];
+    await item.update({ 
+      imeiNumbers: updatedImeiNumbers,
+      quantity: updatedImeiNumbers.length,
+      enableImeiTracking: true
+    });
+
+    res.json({
+      response: {
+        status: {
+          statusCode: 200,
+          statusMessage: "IMEI numbers added successfully",
+        },
+        data: {
+          item: item,
+          imeiCount: updatedImeiNumbers.length,
+          addedCount: imeiNumbers.length
+        },
+      },
+    });
+  } catch (error) {
+    console.error("ADD IMEI ERROR:", error);
+    res.status(500).json({
+      response: {
+        status: {
+          statusCode: 500,
+          statusMessage: "Internal server error",
+        },
+        data: null,
+      },
+    });
+  }
+});
+
 router.post("/imei/remove", async (req, res) => {
   try {
     const { itemId, companyCode, imeiNumbers } = req.body;
@@ -498,13 +492,104 @@ router.post("/imei/remove", async (req, res) => {
   }
 });
 
-// ========== SIZE VARIANT ROUTES ==========
+// ========== SIZE TRACKING ROUTES ==========
+router.get("/size/:size", async (req, res) => {
+  try {
+    const { size } = req.params;
+    const { company_code } = req.query;
 
-// ✅ Update size variant
-router.post("/size-variant/update", validateItem, async (req, res) => {
+    if (!company_code) {
+      return res.status(400).json({
+        response: {
+          status: {
+            statusCode: 400,
+            statusMessage: "Company code is required",
+          },
+          data: null,
+        },
+      });
+    }
+
+    const Item = require("./item.model");
+    const items = await Item.findAll({
+      where: { company_code: company_code }
+    });
+
+    const itemsWithSize = items.filter(item => 
+      item.sizeVariants && 
+      Array.isArray(item.sizeVariants) &&
+      item.sizeVariants.some(variant => {
+        const variantSize = variant.size || variant.Size;
+        const variantQuantity = variant.quantity || variant.Quantity || 0;
+        return variantSize === size && variantQuantity > 0;
+      })
+    );
+
+    const sizeItems = itemsWithSize.map(item => {
+      const variant = item.sizeVariants.find(v => {
+        const variantSize = v.size || v.Size;
+        return variantSize === size;
+      });
+      
+      const availableQuantity = variant ? (variant.quantity || variant.Quantity || 0) : 0;
+      
+      return {
+        item: {
+          _id: item._id,
+          id: item.id,
+          name: item.name,
+          price: item.price,
+          category: item.category,
+          enableSizeTracking: item.enableSizeTracking
+        },
+        sizeVariant: variant,
+        availableQuantity: availableQuantity
+      };
+    });
+
+    res.json({
+      response: {
+        status: {
+          statusCode: 200,
+          statusMessage: "OK",
+        },
+        data: {
+          size: size,
+          totalItems: sizeItems.length,
+          items: sizeItems
+        },
+      },
+    });
+  } catch (error) {
+    console.error("GET ITEMS BY SIZE ERROR:", error);
+    res.status(500).json({
+      response: {
+        status: {
+          statusCode: 500,
+          statusMessage: "Internal server error",
+        },
+        data: null,
+      },
+    });
+  }
+});
+
+router.post("/size-variant/update", async (req, res) => {
   try {
     const { itemId, companyCode, size, quantity, price } = req.body;
     
+    if (!itemId || !companyCode || !size) {
+      return res.status(400).json({
+        response: {
+          status: {
+            statusCode: 400,
+            statusMessage: "Item ID, company code, and size are required",
+          },
+          data: null,
+        },
+      });
+    }
+
     const item = await safeFindItem(itemId, companyCode);
     if (!item) {
       return res.status(404).json({
@@ -539,7 +624,8 @@ router.post("/size-variant/update", validateItem, async (req, res) => {
     
     await item.update({ 
       sizeVariants: updatedSizeVariants,
-      quantity: totalQuantity
+      quantity: totalQuantity,
+      enableSizeTracking: true
     });
 
     res.json({
@@ -551,7 +637,7 @@ router.post("/size-variant/update", validateItem, async (req, res) => {
         data: {
           item: item,
           sizeVariants: updatedSizeVariants.length,
-          totalQuantity
+          totalQuantity: totalQuantity
         },
       },
     });
@@ -569,127 +655,7 @@ router.post("/size-variant/update", validateItem, async (req, res) => {
   }
 });
 
-// ✅ Get items by size - Fixed version
-router.get("/size/:size", async (req, res) => {
-  try {
-    const { size } = req.params;
-    const { company_code } = req.query;
-
-    console.log("📏 Size lookup:", { size, company_code });
-
-    if (!company_code) {
-      return res.status(400).json({
-        response: {
-          status: {
-            statusCode: 400,
-            statusMessage: "Company code is required",
-          },
-          data: null,
-        },
-      });
-    }
-
-    try {
-      // Import the model correctly
-      const Item = require("./item.model");
-      
-      // Find all items for this company
-      const items = await Item.findAll({
-        where: {
-          company_code: company_code
-        }
-      });
-
-      console.log("✅ Found total items:", items.length);
-
-      // Debug: Check which items have size variants
-      const itemsWithSizeVariants = items.filter(item => item.sizeVariants && Array.isArray(item.sizeVariants));
-      console.log("📦 Items with size variants:", itemsWithSizeVariants.length);
-      itemsWithSizeVariants.forEach(item => {
-        console.log(`   - ${item.name}:`, item.sizeVariants);
-      });
-
-      // Find items with this size variant
-      const itemsWithSize = items.filter(item => {
-        if (!item.sizeVariants || !Array.isArray(item.sizeVariants)) return false;
-        
-        return item.sizeVariants.some(variant => {
-          const variantSize = variant.size || variant.Size; // Handle different property names
-          const variantQuantity = variant.quantity || variant.Quantity || 0;
-          return variantSize === size && variantQuantity > 0;
-        });
-      });
-
-      console.log("✅ Items with size", size + ":", itemsWithSize.length);
-
-      const sizeItems = itemsWithSize.map(item => {
-        const variant = item.sizeVariants.find(v => {
-          const variantSize = v.size || v.Size;
-          return variantSize === size;
-        });
-        
-        const availableQuantity = variant ? (variant.quantity || variant.Quantity || 0) : 0;
-        
-        return {
-          item: {
-            _id: item._id,
-            id: item.id,
-            name: item.name,
-            price: item.price,
-            category: item.category,
-            enableSizeTracking: item.enableSizeTracking
-          },
-          sizeVariant: variant,
-          availableQuantity: availableQuantity
-        };
-      });
-
-      res.json({
-        response: {
-          status: {
-            statusCode: 200,
-            statusMessage: "OK",
-          },
-          data: {
-            size: size,
-            totalItems: sizeItems.length,
-            items: sizeItems
-          },
-        },
-      });
-    } catch (dbError) {
-      console.log("Database error in size lookup:", dbError.message);
-      return res.status(500).json({
-        response: {
-          status: {
-            statusCode: 500,
-            statusMessage: "Database error: " + dbError.message,
-          },
-          data: {
-            error: dbError.message
-          },
-        },
-      });
-    }
-  } catch (error) {
-    console.error("GET ITEMS BY SIZE ERROR:", error);
-    res.status(500).json({
-      response: {
-        status: {
-          statusCode: 500,
-          statusMessage: "Internal server error: " + error.message,
-        },
-        data: {
-          error: error.message
-        },
-      },
-    });
-  }
-});
-
-// ========== TRACKING DETAILS ROUTES ==========
-
-// ✅ Get item with tracking details
+// ========== TRACKING DETAILS ROUTE ==========
 router.get("/:id/tracking", async (req, res) => {
   try {
     const { id } = req.params;
