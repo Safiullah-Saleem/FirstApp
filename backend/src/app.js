@@ -32,17 +32,13 @@ const app = express();
 let dbInitialized = false;
 
 // ✅ ENHANCED CORS Configuration for Railway
-app.use(
-  cors({
-    origin: [
-      "https://stockwala-frontend-f5ps.vercel.app",
-      "http://localhost:5173"
-    ],
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
-  })
-);
+const allowedOrigins = ['https://stock-wala-03.web.app', 'http://localhost:5173'];
+app.use(cors({
+  origin: allowedOrigins,
+  methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
+  allowedHeaders: ['Content-Type','Authorization'],
+  credentials: false
+}));
 
 // ✅ ADDED Referrer-Policy header for security
 app.use((req, res, next) => {
