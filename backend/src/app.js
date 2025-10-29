@@ -3,33 +3,11 @@ const bodyParser = require("body-parser");
 const cors = require("cors");
 const { testConnection, getConnectionHealth } = require("./config/database");
 
-// USE ORIGINAL PATHS THAT WORK
-const userRoutes = require("./user/user.routes");
-const employeeRoutes = require("./employees/employee.routes");
-const companyRoutes = require("./company/company.routes");
-const billingRoutes = require("./billing/billing.routes");
-const ledgerRoutes = require("./ledger/ledger.account.routes");
-const bankRoutes = require("./bank/bank.account.routes");
-const cashRoutes = require("./cash/cash.account.routes");
-
-console.log("🟢 Loading item routes...");
-let itemRoutes;
-try {
-  itemRoutes = require("./items/item.routes"); // ✅ FIXED: Assign to existing variable
-  console.log("✅ Item routes loaded successfully");
-} catch (error) {
-  console.error("❌ Error loading item routes:", error.message);
-  // Don't exit immediately - allow other routes to work
-  itemRoutes = express.Router(); // Fallback empty router
-  itemRoutes.get("*", (req, res) => {
-    res.status(503).json({ error: "Item routes temporarily unavailable" });
-  });
-}
-
 const app = express();
 
 // ✅ Track database initialization status
 let dbInitialized = false;
+let routesMounted = false;
 
 // ✅ FIXED CORS Configuration
 app.use(
@@ -114,6 +92,45 @@ const initializeDatabaseAsync = async () => {
       dbInitialized = true;
       console.log("🎉 Database is ready to handle requests!");
 
+      // ✅ Mount routes only after DB and models are ready to avoid circular-load issues
+      if (!routesMounted) {
+        console.log("🟢 Mounting routes...");
+
+        // Load routes lazily now that models exist
+        const userRoutes = require("./user/user.routes");
+        const employeeRoutes = require("./employees/employee.routes");
+        const companyRoutes = require("./company/company.routes");
+        const billingRoutes = require("./billing/billing.routes");
+        const ledgerRoutes = require("./ledger/ledger.account.routes");
+        const bankRoutes = require("./bank/bank.account.routes");
+        const cashRoutes = require("./cash/cash.account.routes");
+
+        let itemRoutes;
+        try {
+          console.log("🟢 Loading item routes...");
+          itemRoutes = require("./items/item.routes");
+          console.log("✅ Item routes loaded successfully");
+        } catch (error) {
+          console.error("❌ Error loading item routes:", error.message);
+          itemRoutes = express.Router();
+          itemRoutes.get("*", (req, res) => {
+            res.status(503).json({ error: "Item routes temporarily unavailable" });
+          });
+        }
+
+        app.use("/api/users", userRoutes);
+        app.use("/api/employees", employeeRoutes);
+        app.use("/api/company", companyRoutes);
+        app.use("/api/items", itemRoutes);
+        app.use("/api/billing", billingRoutes);
+        app.use("/api/ledger", ledgerRoutes);
+        app.use("/api/cash", cashRoutes);
+        app.use("/api/bank", bankRoutes);
+
+        routesMounted = true;
+        console.log("✅ All routes mounted successfully");
+      }
+
       return;
     } catch (error) {
       retryCount++;
@@ -141,47 +158,7 @@ initializeDatabaseAsync().catch((error) => {
   dbInitialized = false;
 });
 
-// ✅ FIXED: Routes mounting - CORRECTED BILLING PATH
-console.log("🟢 Mounting routes...");
-app.use("/api/users", userRoutes);
-app.use("/api/employees", employeeRoutes);
-app.use("/api/company", companyRoutes);
-app.use("/api/items", itemRoutes);
-app.use("/api/billing", billingRoutes); // ✅ This matches your routes file
-app.use("/api/ledger", ledgerRoutes);
-app.use("/api/cash", cashRoutes);
-app.use("/api/bank", bankRoutes);
-console.log("✅ All routes mounted successfully");
-
-// ✅ ADDED AUTH ROUTES - FIX FOR FRONTEND DEVELOPER
-app.post("/api/users/signup", (req, res) => {
-  console.log("📨 POST /api/users/signup - Body:", req.body);
-  res.json({
-    success: true,
-    message: "User registered successfully",
-    user: {
-      id: "user_" + Date.now(),
-      username: req.body.username,
-      email: req.body.email,
-      createdAt: new Date().toISOString()
-    },
-    token: "jwt_token_" + Math.random().toString(36).substr(2, 15)
-  });
-});
-
-app.post("/api/users/login", (req, res) => {
-  console.log("📨 POST /api/users/login - Body:", req.body);
-  res.json({
-    success: true,
-    message: "Login successful",
-    user: {
-      id: "1",
-      username: req.body.username,
-      email: req.body.email || "user@stockwala.com"
-    },
-    token: "jwt_token_" + Math.random().toString(36).substr(2, 15)
-  });
-});
+// Routes will be mounted after database initialization above
 
 // ✅ ADDED Pre-flight OPTIONS handler
 app.options("*", cors());
