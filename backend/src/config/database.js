@@ -1,4 +1,4 @@
-const { Sequelize,Op } = require("sequelize");
+const { Sequelize, Op } = require("sequelize");
 require("dotenv").config();
 
 let sequelize;
@@ -11,7 +11,7 @@ let currentDatabaseType = 'unknown';
 const validateConnectionParams = () => {
   const errors = [];
   
-  // Check Railway DATABASE_URL
+  // Check Heroku DATABASE_URL
   if (process.env.DATABASE_URL) {
     try {
       const url = new URL(process.env.DATABASE_URL);
@@ -41,55 +41,55 @@ const validateConnectionParams = () => {
   return true;
 };
 
-// Connect to Railway PostgreSQL
-const connectToRailway = async () => {
-  console.log("🚂 Connecting to Railway PostgreSQL...");
+// Connect to Heroku PostgreSQL (Production)
+const connectToHeroku = async () => {
+  console.log("🚀 Connecting to Heroku PostgreSQL...");
   
   try {
     // Validate configuration
     if (!process.env.DATABASE_URL) {
-      throw new Error("DATABASE_URL is required for Railway connection");
+      throw new Error("DATABASE_URL is required for Heroku connection");
     }
 
-    const railwayDB = new Sequelize(process.env.DATABASE_URL, {
+    const herokuDB = new Sequelize(process.env.DATABASE_URL, {
       dialect: "postgres",
       dialectOptions: {
         ssl: {
           require: true,
           rejectUnauthorized: false
         },
-        connectTimeout: 10000, // Reduced to 10 seconds for faster fallback
+        connectTimeout: 10000,
         keepAlive: true,
       },
       logging: process.env.NODE_ENV === 'development' ? console.log : false,
       pool: {
         max: parseInt(process.env.DB_POOL_MAX) || 5,
         min: parseInt(process.env.DB_POOL_MIN) || 0,
-        acquire: parseInt(process.env.DB_POOL_ACQUIRE) || 10000, // Reduced to 10 seconds
+        acquire: parseInt(process.env.DB_POOL_ACQUIRE) || 10000,
         idle: parseInt(process.env.DB_POOL_IDLE) || 10000,
       },
       retry: {
-        max: 2, // Reduced retries
+        max: 2,
       }
     });
 
-    // Add connection timeout wrapper - reduced to 10 seconds
-    const connectionTimeout = 10000; // 10 seconds for fast fallback
-    const authenticatePromise = railwayDB.authenticate();
+    // Add connection timeout wrapper
+    const connectionTimeout = 10000;
+    const authenticatePromise = herokuDB.authenticate();
     const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('Connection timeout after 10 seconds')), connectionTimeout)
+      setTimeout(() => reject(new Error('Heroku connection timeout after 10 seconds')), connectionTimeout)
     );
     
     await Promise.race([authenticatePromise, timeoutPromise]);
-    console.log("✅ Connected to Railway PostgreSQL");
-    return railwayDB;
+    console.log("✅ Connected to Heroku PostgreSQL");
+    return herokuDB;
   } catch (error) {
-    console.log(`❌ Railway connection failed: ${error.message}`);
+    console.log(`❌ Heroku connection failed: ${error.message}`);
     throw error;
   }
 };
 
-// Connect to Local PostgreSQL (Primary)
+// Connect to Local PostgreSQL (Development)
 const connectToLocalPostgreSQL = async () => {
   console.log("💻 Connecting to Local PostgreSQL...");
   
@@ -105,18 +105,18 @@ const connectToLocalPostgreSQL = async () => {
       pool: {
         max: 5,
         min: 0,
-        acquire: 5000, // Fast acquisition for local DB
+        acquire: 5000,
         idle: 10000
       },
       retry: {
-        max: 1, // Quick retry for local
+        max: 1,
       }
     };
 
     const localDB = new Sequelize(localConfig);
     
-    // Add connection timeout wrapper - local should be fast
-    const connectionTimeout = 5000; // 5 seconds for local DB
+    // Add connection timeout wrapper
+    const connectionTimeout = 5000;
     const authenticatePromise = localDB.authenticate();
     const timeoutPromise = new Promise((_, reject) => 
       setTimeout(() => reject(new Error('Local connection timeout after 5 seconds')), connectionTimeout)
@@ -136,28 +136,17 @@ const connectToLocalPostgreSQL = async () => {
 const initializeDatabase = async () => {
   console.log("🎯 Initializing PostgreSQL Database...");
   
-  // Prefer DATABASE_URL (Heroku/Railway) first if available, else try local first
-  const connectionAttempts = process.env.DATABASE_URL ? [
+  // Try Heroku PostgreSQL first (production), then Local (development)
+  const connectionAttempts = [
     { 
-      name: 'Railway PostgreSQL', 
-      connect: connectToRailway,
-      type: 'railway'
+      name: 'Heroku PostgreSQL', 
+      connect: connectToHeroku,
+      type: 'heroku'
     },
     { 
       name: 'Local PostgreSQL', 
       connect: connectToLocalPostgreSQL,
       type: 'local'
-    }
-  ] : [
-    { 
-      name: 'Local PostgreSQL', 
-      connect: connectToLocalPostgreSQL,
-      type: 'local'
-    },
-    { 
-      name: 'Railway PostgreSQL', 
-      connect: connectToRailway,
-      type: 'railway'
     }
   ];
 
@@ -179,7 +168,7 @@ const initializeDatabase = async () => {
     }
   }
 
-  throw new Error("💥 Both Railway and Local PostgreSQL connections failed");
+  throw new Error("💥 Both Heroku and Local PostgreSQL connections failed");
 };
 
 // ==================== DATABASE MANAGEMENT ====================
@@ -309,21 +298,21 @@ const closeConnection = async () => {
 };
 
 // Manual control functions
-const switchToRailway = async () => {
+const switchToHeroku = async () => {
   try {
-    console.log('🔄 Switching to Railway PostgreSQL...');
-    const railwayDB = await connectToRailway();
+    console.log('🔄 Switching to Heroku PostgreSQL...');
+    const herokuDB = await connectToHeroku();
     
     if (sequelize) {
       await sequelize.close();
     }
     
-    sequelize = railwayDB;
-    currentDatabaseType = 'railway';
-    console.log('✅ Successfully switched to Railway PostgreSQL');
+    sequelize = herokuDB;
+    currentDatabaseType = 'heroku';
+    console.log('✅ Successfully switched to Heroku PostgreSQL');
     return true;
   } catch (error) {
-    console.log('❌ Failed to switch to Railway');
+    console.log('❌ Failed to switch to Heroku');
     return false;
   }
 };
@@ -403,11 +392,8 @@ const createSequelizeProxy = () => {
     },
     
     define: (...args) => {
-      // This is safe to call immediately - it just defines the model
-      // The actual database operations will happen later
       if (!sequelize) {
         console.log('⚠️ Sequelize not initialized yet, but defining model...');
-        // Return a function that will be called when sequelize is available
         return (actualSequelize) => actualSequelize.define(...args);
       }
       return sequelize.define(...args);
@@ -469,7 +455,7 @@ module.exports = {
   getDatabaseStatus,
   
   // Manual control
-  switchToRailway,
+  switchToHeroku,
   switchToLocal,
   
   // Utilities
@@ -481,5 +467,8 @@ module.exports = {
   isConnected: () => isConnected,
   
   // Initialization status
-  isInitialized: () => dbInitialized
+  isInitialized: () => dbInitialized,
+  
+  // Sequelize operators
+  Op
 };
