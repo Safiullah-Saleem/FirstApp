@@ -5,9 +5,7 @@ const {
   getCompany,
   getCompanyByPath,
   updateCompanyPassword,
-  getCurrentCompany,
-  deleteCompany,
-  softDeleteCompany
+  getCurrentCompany // ADD THIS IMPORT
 } = require("./company.controller");
 
 const router = express.Router();
@@ -26,13 +24,6 @@ router.post("/getCompany", authenticate, getCompany);
 
 // Get company by path parameter
 router.get("/:companyCode", authenticate, getCompanyByPath);
-
-// ==================== COMPANY DELETION ROUTES ====================
-// Permanent deletion (requires confirmation and password)
-router.delete("/", authenticate, deleteCompany);
-
-// Soft deletion (deactivation)
-router.put("/deactivate", authenticate, softDeleteCompany);
 
 // ==================== ADDITIONAL OPTIMIZED ROUTES ====================
 // Get current user's company (most common use case)

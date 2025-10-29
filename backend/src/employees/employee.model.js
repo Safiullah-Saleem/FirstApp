@@ -1,7 +1,6 @@
 const { DataTypes } = require("sequelize");
 const { sequelize } = require("../config/database");
 const bcrypt = require("bcryptjs");
-const { Op } = require("sequelize");
 
 // Generate unique 4-digit employee code (DEFINED BEFORE Model)
 const generateUniqueEmployeeCode = async () => {
@@ -27,24 +26,6 @@ const generateUniqueEmployeeCode = async () => {
   }
 
   return code;
-};
-
-// Calculate net salary function
-const calculateNetSalary = (employee) => {
-  const basic = parseFloat(employee.salary_basic) || 0;
-  const hra = parseFloat(employee.salary_hra) || 0;
-  const allowances = parseFloat(employee.salary_allowances) || 0;
-  const pf = parseFloat(employee.salary_pf) || 0;
-  const esi = parseFloat(employee.salary_esi) || 0;
-  const tax = parseFloat(employee.salary_tax) || 0;
-
-  const grossSalary = basic + hra + allowances;
-  const deductions = pf + esi + tax;
-  const netSalary = grossSalary - deductions;
-
-  console.log(`💰 Salary Calculation: Gross=${grossSalary}, Deductions=${deductions}, Net=${netSalary}`);
-  
-  return Math.max(0, netSalary);
 };
 
 const Employee = sequelize.define(
@@ -118,78 +99,9 @@ const Employee = sequelize.define(
       field: 'status'
     },
     join_date: {
-      type: DataTypes.BIGINT,
+      type: DataTypes.BIGINT, // CHANGED: Use BIGINT for timestamp
       field: 'join_date'
     },
-
-    // ==================== SALARY FIELDS ====================
-    salary_basic: {
-      type: DataTypes.DECIMAL(12, 2),
-      defaultValue: 0.00,
-      field: 'salary_basic'
-    },
-    salary_hra: {
-      type: DataTypes.DECIMAL(12, 2),
-      defaultValue: 0.00,
-      field: 'salary_hra'
-    },
-    salary_allowances: {
-      type: DataTypes.DECIMAL(12, 2),
-      defaultValue: 0.00,
-      field: 'salary_allowances'
-    },
-    salary_pf: {
-      type: DataTypes.DECIMAL(12, 2),
-      defaultValue: 0.00,
-      field: 'salary_pf'
-    },
-    salary_esi: {
-      type: DataTypes.DECIMAL(12, 2),
-      defaultValue: 0.00,
-      field: 'salary_esi'
-    },
-    salary_tax: {
-      type: DataTypes.DECIMAL(12, 2),
-      defaultValue: 0.00,
-      field: 'salary_tax'
-    },
-    salary_net: {
-      type: DataTypes.DECIMAL(12, 2),
-      defaultValue: 0.00,
-      field: 'salary_net'
-    },
-    salary_currency: {
-      type: DataTypes.STRING,
-      defaultValue: 'INR',
-      field: 'salary_currency'
-    },
-    salary_payment_type: {
-      type: DataTypes.ENUM('monthly', 'weekly', 'bi-weekly', 'hourly'),
-      defaultValue: 'monthly',
-      field: 'salary_payment_type'
-    },
-    salary_bank_account: {
-      type: DataTypes.STRING,
-      field: 'salary_bank_account'
-    },
-    salary_bank_name: {
-      type: DataTypes.STRING,
-      field: 'salary_bank_name'
-    },
-    salary_bank_ifsc: {
-      type: DataTypes.STRING,
-      field: 'salary_bank_ifsc'
-    },
-    salary_effective_date: {
-      type: DataTypes.BIGINT,
-      field: 'salary_effective_date'
-    },
-    salary_notes: {
-      type: DataTypes.TEXT,
-      field: 'salary_notes'
-    },
-    // ==================== END SALARY FIELDS ====================
-
     access: {
       type: DataTypes.JSON,
       defaultValue: ["Dashboard"],
@@ -269,21 +181,12 @@ const Employee = sequelize.define(
           employee.created_at = timestamp;
           employee.modified_at = timestamp;
           
-          // Set join_date as BIGINT timestamp
+          // Set join_date as BIGINT timestamp (not Date object)
           if (!employee.join_date) {
             employee.join_date = timestamp;
           } else if (employee.join_date instanceof Date) {
+            // Convert Date object to timestamp
             employee.join_date = Math.floor(employee.join_date.getTime() / 1000);
-          }
-
-          // Set salary effective date if not provided
-          if (!employee.salary_effective_date) {
-            employee.salary_effective_date = timestamp;
-          }
-
-          // Calculate net salary if salary components are provided
-          if (employee.salary_basic || employee.salary_hra || employee.salary_allowances) {
-            employee.salary_net = calculateNetSalary(employee);
           }
           
           console.log("Timestamps set - created_at:", employee.created_at, "modified_at:", employee.modified_at);
@@ -304,18 +207,6 @@ const Employee = sequelize.define(
         if (employee.join_date instanceof Date) {
           employee.join_date = Math.floor(employee.join_date.getTime() / 1000);
         }
-
-        // Calculate net salary if salary components are changed
-        if (employee.changed('salary_basic') || employee.changed('salary_hra') || 
-            employee.changed('salary_allowances') || employee.changed('salary_pf') || 
-            employee.changed('salary_esi') || employee.changed('salary_tax')) {
-          employee.salary_net = calculateNetSalary(employee);
-        }
-
-        // Set salary effective date if not provided and salary is being updated
-        if ((employee.changed('salary_basic') || employee.changed('salary_hra')) && !employee.salary_effective_date) {
-          employee.salary_effective_date = Math.floor(Date.now() / 1000);
-        }
       },
     },
   }
@@ -324,86 +215,6 @@ const Employee = sequelize.define(
 // Instance method to check password
 Employee.prototype.correctPassword = async function (candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
-};
-
-// Instance method to get salary details
-Employee.prototype.getSalaryDetails = function () {
-  return {
-    basic: parseFloat(this.salary_basic) || 0,
-    hra: parseFloat(this.salary_hra) || 0,
-    allowances: parseFloat(this.salary_allowances) || 0,
-    pf: parseFloat(this.salary_pf) || 0,
-    esi: parseFloat(this.salary_esi) || 0,
-    tax: parseFloat(this.salary_tax) || 0,
-    net: parseFloat(this.salary_net) || 0,
-    currency: this.salary_currency || 'INR',
-    payment_type: this.salary_payment_type || 'monthly',
-    bank_account: this.salary_bank_account || '',
-    bank_name: this.salary_bank_name || '',
-    bank_ifsc: this.salary_bank_ifsc || '',
-    effective_date: this.salary_effective_date || this.created_at,
-    notes: this.salary_notes || ''
-  };
-};
-
-// Instance method to calculate salary breakdown
-Employee.prototype.calculateSalaryBreakdown = function () {
-  const basic = parseFloat(this.salary_basic) || 0;
-  const hra = parseFloat(this.salary_hra) || 0;
-  const allowances = parseFloat(this.salary_allowances) || 0;
-  const pf = parseFloat(this.salary_pf) || 0;
-  const esi = parseFloat(this.salary_esi) || 0;
-  const tax = parseFloat(this.salary_tax) || 0;
-  const net = parseFloat(this.salary_net) || 0;
-
-  const gross = basic + hra + allowances;
-  const totalDeductions = pf + esi + tax;
-
-  return {
-    gross_salary: gross,
-    total_deductions: totalDeductions,
-    net_salary: net,
-    breakdown: {
-      basic: basic,
-      hra: hra,
-      allowances: allowances,
-      pf: pf,
-      esi: esi,
-      tax: tax
-    },
-    percentages: {
-      basic_percentage: gross > 0 ? ((basic / gross) * 100).toFixed(2) : '0.00',
-      hra_percentage: gross > 0 ? ((hra / gross) * 100).toFixed(2) : '0.00',
-      allowances_percentage: gross > 0 ? ((allowances / gross) * 100).toFixed(2) : '0.00',
-      deductions_percentage: gross > 0 ? ((totalDeductions / gross) * 100).toFixed(2) : '0.00'
-    }
-  };
-};
-
-// Instance method to update salary
-Employee.prototype.updateSalary = async function (salaryData) {
-  const updateData = {};
-  
-  const salaryFields = [
-    'salary_basic', 'salary_hra', 'salary_allowances', 'salary_pf', 
-    'salary_esi', 'salary_tax', 'salary_currency', 'salary_payment_type',
-    'salary_bank_account', 'salary_bank_name', 'salary_bank_ifsc', 
-    'salary_effective_date', 'salary_notes'
-  ];
-  
-  salaryFields.forEach(field => {
-    if (salaryData[field] !== undefined) {
-      updateData[field] = salaryData[field];
-    }
-  });
-
-  // Set effective date if not provided
-  if (salaryData.salary_basic && !updateData.salary_effective_date) {
-    updateData.salary_effective_date = Math.floor(Date.now() / 1000);
-  }
-
-  await this.update(updateData);
-  return this.getSalaryDetails();
 };
 
 // Instance method to get basic info (without password)
@@ -430,54 +241,6 @@ Employee.findActiveByCompany = function (companyCode) {
     },
     attributes: { exclude: ['password'] }
   });
-};
-
-// Static method to find employees by salary range
-Employee.findBySalaryRange = function (companyCode, minSalary = 0, maxSalary = 9999999) {
-  return this.findAll({
-    where: { 
-      company_code: companyCode,
-      salary_net: {
-        [Op.between]: [minSalary, maxSalary]
-      }
-    },
-    attributes: { exclude: ['password'] }
-  });
-};
-
-// Static method to get company salary summary
-Employee.getCompanySalarySummary = async function (companyCode) {
-  const employees = await this.findAll({
-    where: { 
-      company_code: companyCode,
-      status: 'active'
-    },
-    attributes: [
-      'id', 'employee_code', 'username', 'department', 'position',
-      'salary_basic', 'salary_hra', 'salary_allowances', 'salary_net'
-    ]
-  });
-
-  let totalBasic = 0;
-  let totalHra = 0;
-  let totalAllowances = 0;
-  let totalNet = 0;
-
-  employees.forEach(employee => {
-    totalBasic += parseFloat(employee.salary_basic) || 0;
-    totalHra += parseFloat(employee.salary_hra) || 0;
-    totalAllowances += parseFloat(employee.salary_allowances) || 0;
-    totalNet += parseFloat(employee.salary_net) || 0;
-  });
-
-  return {
-    total_employees: employees.length,
-    total_basic: totalBasic,
-    total_hra: totalHra,
-    total_allowances: totalAllowances,
-    total_net_salary: totalNet,
-    average_salary: employees.length > 0 ? totalNet / employees.length : 0
-  };
 };
 
 module.exports = Employee;
